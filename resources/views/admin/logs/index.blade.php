@@ -1,0 +1,9 @@
+@extends('layouts.app')
+@section('content')
+<div class="container">
+    <p class="brand-accent">FASO DIGITAL TRADING · ADMINISTRATION</p><h1>Journaux d’audit et sécurité</h1>
+    <p class="muted">Consultation seule. Les valeurs potentiellement sensibles sont masquées avant affichage.</p>
+    <form method="GET" class="card" style="display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:16px 0"><div><label>Type</label><select name="type"><option value="audit" @selected($kind==='audit')>Actions administrateur</option><option value="security" @selected($kind==='security')>Événements de sécurité</option></select></div><div><label>Recherche</label><input name="q" value="{{ $filters['q']??'' }}" maxlength="120"></div><div><label>Du</label><input type="date" name="from" value="{{ $filters['from']??'' }}"></div><div><label>Au</label><input type="date" name="to" value="{{ $filters['to']??'' }}"></div><button class="button button-small" type="submit">Filtrer</button><a class="text-link" href="{{ route('admin.logs.index') }}">Réinitialiser</a></form>
+    <section class="card"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Acteur</th><th>Événement</th><th>Entité</th><th>Adresse réseau</th><th>Détails masqués</th></tr></thead><tbody>@forelse($logs as $log)<tr><td>{{ $log->created_at }}</td><td>{{ $log->actor_email ?? 'Système / compte supprimé' }}</td><td>{{ $kind==='audit' ? $log->action : $log->event }}</td><td>{{ $log->entity_type ?? '—' }} {{ $log->entity_id ?? '' }}</td><td>{{ $log->ip_address ?? '—' }}</td><td><details><summary>Afficher</summary><pre class="admin-log-data">{{ $log->safe_context }}</pre></details></td></tr>@empty<tr><td colspan="6">Aucun journal pour ces filtres.</td></tr>@endforelse</tbody></table></div>{{ $logs->links() }}</section>
+</div>
+@endsection

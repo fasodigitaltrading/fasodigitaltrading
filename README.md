@@ -11,7 +11,7 @@ Application Laravel pour le site public, les comptes, abonnements, licences MT5 
 
 ## Développement local
 
-Prérequis : PHP 8.3 ou plus récent avec `pdo_sqlite`, `mbstring`, `openssl`, `curl` et `zip`; Composer 2.
+Prérequis : PHP 8.4.1 ou plus récent avec `pdo_sqlite`, `mbstring`, `openssl`, `curl` et `zip`; Composer 2.
 
 ```powershell
 Copy-Item .env.example .env
@@ -42,7 +42,7 @@ Le formulaire de contact et l’inscription gardent la date et la version des co
 
 ## Production
 
-- PHP 8.3+ et Laravel 13 derrière un reverse proxy HTTPS.
+- PHP 8.4.1+ et Laravel 13 derrière un reverse proxy HTTPS. La version minimale correspond aux dépendances verrouillées dans `composer.lock`.
 - MySQL 8.4 LTS, sauvegardes chiffrées et stockage privé.
 - `APP_DEBUG=false`, clé d'application unique, cookies de session HTTPS, proxies explicitement approuvés et secrets fournis par un gestionnaire de secrets.
 - Définir `SESSION_SECURE_COOKIE=true`, `SESSION_ENCRYPT=true` et `SESSION_LIFETIME=60` en production. Les en-têtes de sécurité sont ajoutés par l’application; HSTS n’est émis que sur une requête HTTPS.

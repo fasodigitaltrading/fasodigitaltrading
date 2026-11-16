@@ -5,9 +5,8 @@
 ## Répertoire et dépôt
 
 - Racine Laravel et racine Git : `outputs/black-wolf-trading` dans le workspace.
-- Branche locale : `main`.
-- Branche locale : `main`, dernier commit local : `85a73bf` (`Align PHP runtime for deployment`).
-- Le remote `origin` est configuré vers `https://github.com/fasodigitaltrading/fasodigitaltrading.git`. Les changements présents dans l'arbre de travail ne sont pas encore dans ce commit.
+- Branche : `main`.
+- Le remote `origin` pointe vers `https://github.com/fasodigitaltrading/fasodigitaltrading.git`.
 - Laravel Cloud n'est pas encore relié au dépôt et aucun déploiement n'a été lancé.
 - Connecter Laravel Cloud au dossier du projet à la racine du dépôt. Ne pas sélectionner le dossier parent du workspace.
 
@@ -17,7 +16,7 @@ Laravel Cloud détecte l'application Laravel et gère son runtime PHP, les domai
 
 Paramètres initiaux à utiliser dans un environnement de préproduction :
 
-- Runtime PHP 8.3 ou supérieur (le projet exige `^8.3`).
+- Runtime PHP 8.4 ou supérieur : les versions verrouillées de Symfony dans `composer.lock` exigent PHP 8.4.1 minimum, même si `composer.json` accepte encore `^8.3`.
 - Ajouter une base Laravel MySQL dans la même région que l'application. Cloud injecte les variables de connexion `DB_*`; définir explicitement `DB_CONNECTION=mysql`, car le modèle local `.env.example` utilise SQLite. Ne pas copier la configuration SQLite locale.
 - Ajouter un bucket Laravel Object Storage **privé** et lui donner le nom de disque `s3`. Cloud s'appuie sur Cloudflare R2 et injecte le bucket, la région, l'endpoint HTTPS et les identifiants `AWS_*`. La configuration applicative utilise ces valeurs. Pour les captures crypto, définir `PAYMENTS_MANUAL_PROOF_DISK=s3` et `PAYMENTS_MANUAL_PROOF_STORAGE_PERSISTENT=true` après avoir vérifié que le bucket est privé et que la clé d'accès a les droits lecture/écriture.
 - Garder `SESSION_DRIVER=database` et `CACHE_STORE=database` au départ.
@@ -36,17 +35,17 @@ La compilation frontend utilise Node, Vite et `qrcode` pour générer localement
 - Commande de build : `composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader && npm exec --yes --package=pnpm@11.25.0 -- pnpm install --frozen-lockfile && npm exec --yes --package=pnpm@11.25.0 -- pnpm build && php artisan optimize`. Le runtime PHP de Cloud inclut Node.js et npm, mais la version de pnpm est explicitement épinglée au niveau du projet et lors du build.
 - Aucun déploiement, import de base, migration ou paiement réel n'a été lancé dans cette préparation.
 
-## Audits locaux avant le premier push
+## Vérifications de code et CI
 
 Le `.gitignore` exclut `.env`, les fichiers `.env.*` sauf le modèle `.env.example`, la base locale, les clés/certificats, les identifiants Composer/npm/AWS, les journaux, les justificatifs privés et les sauvegardes. Le `.dockerignore` applique également ces exclusions au contexte d'image Docker.
 
-`composer.lock` et `pnpm-lock.yaml` sont présents. Vérifications du 16 novembre 2026 : PHPUnit passe (135 tests, 953 assertions); `pnpm install --frozen-lockfile`, le build frontend et `pnpm audit --audit-level=high` passent. Les fichiers `composer.json` et `composer.lock` sont des JSON valides, mais Composer CLI n'est pas disponible dans l'environnement local; `composer validate --strict` et `composer audit --locked` restent à exécuter avant une mise en production. L'analyse du dépôt n'a trouvé aucun secret; `.env` et la base SQLite locale sont ignorés. Ne jamais forcer leur ajout.
+`composer.lock` et `pnpm-lock.yaml` sont présents. Vérifications locales du 16 novembre 2026 : PHPUnit passe (135 tests, 953 assertions); `pnpm install --frozen-lockfile`, le build frontend et `pnpm audit --audit-level=high` passent. Composer CLI n'est pas disponible localement. Le premier run GitHub Actions s'est arrêté avant les tests : il utilisait PHP 8.3, alors que des dépendances verrouillées dans `composer.lock` exigent PHP 8.4.1 minimum. Le workflow est corrigé pour utiliser PHP 8.4; il faut attendre la réussite du prochain run avant de considérer les contrôles CI comme validés. L'analyse du dépôt n'a trouvé aucun secret; `.env` et la base SQLite locale sont ignorés. Ne jamais forcer leur ajout.
 
 ## Étapes utilisateur dans Laravel Cloud
 
 1. Créer/ouvrir le compte Laravel Cloud et connecter le fournisseur GitHub.
-2. Créer un dépôt **privé** à partir de la racine Laravel du projet, ou relier ce dépôt local à un dépôt privé après revue du premier commit.
-3. Dans Cloud, créer une application depuis la branche `main`, sélectionner PHP 8.3+ et une région adaptée.
+2. Le dépôt GitHub existant est `fasodigitaltrading/fasodigitaltrading`; vérifier son réglage de visibilité avant d'y placer du code privé. Aucun secret ne doit être ajouté au dépôt.
+3. Dans Cloud, créer une application depuis la branche `main`, sélectionner PHP 8.4 ou supérieur et une région adaptée.
 4. Créer une préproduction avec MySQL et un bucket privé; ne pas activer les paiements.
 5. Renseigner les secrets dans Cloud. Ne pas coller les clés dans une conversation, un ticket ou un fichier commité.
 6. Tester le bucket S3 privé, les e-mails et les flux crypto en préproduction.
@@ -57,3 +56,4 @@ Le `.gitignore` exclut `.env`, les fichiers `.env.*` sauf le modèle `.env.examp
 - [Images de base et outils Laravel Cloud](https://laravel.com/cloud/docs/base-images) : le runtime PHP inclut Node.js et npm pour compiler les assets.
 - [Laravel Object Storage](https://laravel.com/cloud/docs/resources/object-storage) : stockage S3 compatible Cloudflare R2, bucket privé et variables `AWS_*`.
 - [Compatibilité S3 de Cloudflare R2](https://developers.cloudflare.com/r2/api/s3/api/) : les ACL d'objet ne sont pas prises en charge; l'accès doit être défini par le bucket.
+

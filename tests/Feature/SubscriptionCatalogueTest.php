@@ -38,6 +38,7 @@ final class SubscriptionCatalogueTest extends TestCase
     public function test_each_pack_leads_to_a_server_priced_order_summary_without_simulating_payment(): void
     {
         app(\Database\Seeders\DatabaseSeeder::class)->run();
+        config(['license.binding_key' => str_repeat('test-binding-', 3)]);
         $user = User::create([
             'first_name' => 'Test', 'last_name' => 'Investor', 'email' => 'catalog-buyer@example.test',
             'password' => 'a sufficiently long password', 'role' => 'INVESTOR', 'status' => 'ACTIVE',
@@ -99,3 +100,4 @@ final class SubscriptionCatalogueTest extends TestCase
     }
 
 }
+

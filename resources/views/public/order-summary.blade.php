@@ -106,7 +106,7 @@
                                 <canvas data-qr-address="{{ $cryptoMethod['recipient'] }}" width="180" height="180" aria-label="QR code contenant l’adresse du portefeuille"></canvas>
                                 <div style="min-width:min(100%,360px)">
                                     <label for="crypto-recipient">Adresse de réception</label>
-                                    <input id="crypto-recipient" type="text" value="{{ $cryptoMethod['recipient'] }}" readonly onclick="this.select()" style="width:100%">
+                                    <input id="crypto-recipient" type="text" value="{{ $cryptoMethod['recipient'] }}" readonly data-select-on-click style="width:100%">
                                     <button class="button button-quiet" type="button" data-copy-address="{{ $cryptoMethod['recipient'] }}" style="margin-top:8px">Copier l’adresse</button>
                                     <small class="field-help" data-copy-feedback role="status"></small>
                                 </div>

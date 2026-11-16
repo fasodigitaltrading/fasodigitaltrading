@@ -9,7 +9,7 @@
     @if($errors->any())<div class="form-alert" role="alert">{{ $errors->first() }}</div>@endif
     <form method="GET" action="{{ route('admin.contact-requests.index') }}" class="content-panel" style="display:flex;align-items:center;gap:12px;margin-top:20px">
         <label for="status">Filtrer par statut</label>
-        <select id="status" name="status" onchange="this.form.submit()" style="min-height:40px;padding:8px;border:1px solid var(--line-strong);border-radius:8px;background:#0a0f15;color:var(--text)">
+        <select id="status" name="status" data-submit-on-change style="min-height:40px;padding:8px;border:1px solid var(--line-strong);border-radius:8px;background:#0a0f15;color:var(--text)">
             <option value="">Tous les statuts</option>
             @foreach(['NEW'=>'Nouvelle','IN_PROGRESS'=>'En cours','RESOLVED'=>'Traitée'] as $value => $label)<option value="{{ $value }}" @selected($selectedStatus === $value)>{{ $label }}</option>@endforeach
         </select>

@@ -55,8 +55,8 @@
         <p class="market-disclaimer">Source : TradingView. Les marchés, symboles et délais de cotation dépendent des flux disponibles auprès du fournisseur et des places boursières. Ce graphique est informatif et ne constitue pas un conseil financier.</p>
     </div>
 </section>
-<script type="module" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script>
-<script type="module">
+<script type="module" nonce="{{ request()->attributes->get('csp_nonce') }}" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script>
+<script type="module" nonce="{{ request()->attributes->get('csp_nonce') }}">
     const selector = document.getElementById('market-symbol');
     const chart = document.getElementById('black-wolf-market-chart');
     const chartShell = chart?.parentElement;

@@ -20,8 +20,11 @@ class SecurityHeadersTest extends TestCase
     {
         config(['app.env' => 'production']);
 
-        $this->get('/up')->assertHeaderMissing('Strict-Transport-Security');
+        $this->get('/up')
+            ->assertHeaderMissing('Strict-Transport-Security')
+            ->assertHeaderMissing('Content-Security-Policy');
         $this->get('https://localhost/up')
-            ->assertHeader('Strict-Transport-Security', 'max-age=31536000');
+            ->assertHeader('Strict-Transport-Security', 'max-age=31536000')
+            ->assertHeader('Content-Security-Policy');
     }
 }

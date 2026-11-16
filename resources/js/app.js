@@ -49,3 +49,11 @@ document.querySelectorAll('[data-copy-address]').forEach((button) => {
         }
     });
 });
+
+document.querySelectorAll('[data-select-on-click]').forEach((element) => {
+    element.addEventListener('click', () => element.select());
+});
+
+document.querySelectorAll('[data-submit-on-change]').forEach((element) => {
+    element.addEventListener('change', () => element.form?.requestSubmit());
+});

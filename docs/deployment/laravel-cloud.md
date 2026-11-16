@@ -39,7 +39,7 @@ La compilation frontend utilise Node, Vite et `qrcode` pour générer localement
 
 Le `.gitignore` exclut `.env`, les fichiers `.env.*` sauf le modèle `.env.example`, la base locale, les clés/certificats, les identifiants Composer/npm/AWS, les journaux, les justificatifs privés et les sauvegardes. Le `.dockerignore` applique également ces exclusions au contexte d'image Docker.
 
-`composer.lock` et `pnpm-lock.yaml` sont présents. Vérifications locales du 16 novembre 2026 : PHPUnit passe (135 tests, 953 assertions); `pnpm install --frozen-lockfile`, le build frontend et `pnpm audit --audit-level=high` passent. Composer CLI n'est pas disponible localement. Le premier run GitHub Actions s'est arrêté avant les tests : il utilisait PHP 8.3, alors que des dépendances verrouillées dans `composer.lock` exigent PHP 8.4.1 minimum. Le workflow est corrigé pour utiliser PHP 8.4; il faut attendre la réussite du prochain run avant de considérer les contrôles CI comme validés. L'analyse du dépôt n'a trouvé aucun secret; `.env` et la base SQLite locale sont ignorés. Ne jamais forcer leur ajout.
+`composer.lock` et `pnpm-lock.yaml` sont présents. Vérifications locales du 16 novembre 2026 : PHPUnit passe (135 tests, 953 assertions); `pnpm install --frozen-lockfile`, le build frontend et `pnpm audit --audit-level=high` passent. Composer CLI n'est pas disponible localement. Après correction du runtime PHP 8.4 et des répertoires Laravel absents dans un checkout propre, GitHub Actions passe le 16 novembre 2026 : `composer validate --strict`, `composer audit` (aucune vulnérabilité signalée), 135 tests / 953 assertions, vérification syntaxique des scripts de sauvegarde et build de l'image Docker. L'analyse du dépôt n'a trouvé aucun secret; `.env` et la base SQLite locale sont ignorés. Ne jamais forcer leur ajout.
 
 ## Étapes utilisateur dans Laravel Cloud
 
@@ -56,4 +56,5 @@ Le `.gitignore` exclut `.env`, les fichiers `.env.*` sauf le modèle `.env.examp
 - [Images de base et outils Laravel Cloud](https://laravel.com/cloud/docs/base-images) : le runtime PHP inclut Node.js et npm pour compiler les assets.
 - [Laravel Object Storage](https://laravel.com/cloud/docs/resources/object-storage) : stockage S3 compatible Cloudflare R2, bucket privé et variables `AWS_*`.
 - [Compatibilité S3 de Cloudflare R2](https://developers.cloudflare.com/r2/api/s3/api/) : les ACL d'objet ne sont pas prises en charge; l'accès doit être défini par le bucket.
+
 

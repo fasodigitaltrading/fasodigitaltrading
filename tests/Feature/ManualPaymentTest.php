@@ -2,272 +2,227 @@
 
 namespace Tests\Feature;
 
+use App\Mail\ManualPaymentConfirmed;
+use App\Mail\ManualPaymentReceivedAlert;
 use App\Models\License;
-use App\Models\ManualPaymentOtp;
 use App\Models\ManualPaymentSubmission;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionOrder;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
-use App\Services\ManualPaymentReadiness;
 use App\Services\ManualPaymentProofStorage;
-use App\Mail\ManualPaymentReceivedAlert;
+use App\Services\ManualPaymentProofObjectStorage;
+use App\Services\ManualPaymentReadiness;
+use Aws\Result;
+use Aws\S3\S3Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Str;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Mockery;
 use Tests\TestCase;
 
 class ManualPaymentTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_investor_can_submit_a_private_manual_transfer_proof_without_faking_a_payment(): void
+    public function test_investor_submits_only_a_screenshot_and_no_payment_is_activated(): void
     {
         Http::preventStrayRequests();
-        config([
-            'admin.email' => 'payments-admin@example.test',
-            'license.binding_key' => str_repeat('k', 48),
-            'payments.manual_proof_root' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'bwt-manual-'.Str::uuid(),
-        ]);
+        $this->configurePayment();
         Mail::fake();
         [$user, $order] = $this->orderForInvestor();
-        [$otp, $code] = $this->issueOtp($user, $order);
 
-        $this->assertTrue(Hash::check($code, $otp->code_hash));
-        $this->assertNotSame($code, $otp->code_hash);
+        $this->actingAs($user)->get(route('subscriptions.orders.show', $order))
+            ->assertOk()
+            ->assertSee('data-qr-address="0xF9C6Bb6b72091Ddc8F5DcCc2D90EBc73870D042D"', false)
+            ->assertSee('J’ai payé · envoyer la capture');
 
         $this->actingAs($user)->post(route('subscriptions.orders.manual-payment', $order), [
-            'method' => 'orange_money',
-            'manual_payment_otp' => $code,
-            'transaction_reference' => 'OM-2026-000123',
-            'declared_amount' => '6000',
-            'transaction_occurred_at' => now()->format('Y-m-d\\TH:i'),
+            'method' => 'usdt_bep20',
             'payment_acknowledgement' => 'yes',
-            'proof' => UploadedFile::fake()->createWithContent('receipt.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
+            'proof' => $this->screenshot(),
         ])->assertRedirect(route('subscriptions.orders.show', $order))
             ->assertSessionHas('status');
 
         $submission = ManualPaymentSubmission::sole();
-        $this->assertSame('6000.00', $submission->expected_amount);
-        $this->assertSame('XOF', $submission->currency);
-        $this->assertSame('0022667902537', $submission->recipient_snapshot);
-        $this->assertSame('6000.00', $submission->declared_amount);
-        $this->assertSame($otp->id, $submission->manual_payment_otp_id);
+        $this->assertSame('10.00', $submission->expected_amount);
+        $this->assertSame('USDT', $submission->currency);
+        $this->assertSame('0xF9C6Bb6b72091Ddc8F5DcCc2D90EBc73870D042D', $submission->recipient_snapshot);
+        $this->assertStringStartsWith('REQ-', $submission->transaction_reference);
+        $this->assertNull($submission->declared_amount);
+        $this->assertNull($submission->transaction_occurred_at);
+        $this->assertNull($submission->manual_payment_otp_id);
         $this->assertSame('PENDING', $submission->status);
         $this->assertSame('SENT', $submission->admin_email_status);
         $this->assertNotNull($submission->customer_acknowledged_at);
-        $this->assertSame('manual-payment-v1', $submission->customer_terms_version);
+        $this->assertSame('manual-payment-v2-crypto', $submission->customer_terms_version);
         $this->assertTrue(StoragePath::exists((string) config('payments.manual_proof_root'), $submission->proof_path));
         $this->assertDatabaseCount('payments', 0);
         $this->assertDatabaseHas('subscription_orders', ['id' => $order->id, 'status' => 'AWAITING_PAYMENT']);
-        $this->assertNotNull($otp->fresh()->used_at);
-        $this->assertNotNull($otp->fresh()->code_ciphertext);
-        Mail::assertSent(ManualPaymentReceivedAlert::class, function (ManualPaymentReceivedAlert $mail) use ($code, $submission): bool {
+
+        Mail::assertSent(ManualPaymentReceivedAlert::class, function (ManualPaymentReceivedAlert $mail) use ($submission): bool {
+            $attachments = $mail->attachments();
+
             return $mail->hasTo('payments-admin@example.test')
-                && $mail->otpCode === $code
-                && $mail->submission->is($submission);
+                && $mail->otpCode === null
+                && $mail->submission->is($submission)
+                && count($attachments) === 1
+                && $attachments[0]->as === 'capture-transaction-'.$submission->id.'.png'
+                && $attachments[0]->mime === 'image/png';
         });
-        $this->actingAs($this->admin('payments-admin@example.test'))
-            ->post(route('admin.manual-payments.notify', $submission))
-            ->assertRedirect(route('admin.manual-payments.index'));
-        Mail::assertSent(ManualPaymentReceivedAlert::class, 2);
-        $this->assertDatabaseHas('audit_logs', [
-            'action' => 'manual_payment.admin_email_retry',
-            'entity_id' => $submission->id,
-        ]);
+
+        $this->actingAs($this->admin())->get(route('admin.manual-payments.index'))
+            ->assertOk()->assertSee('data-review-countdown', false)
+            ->assertSee('Priorité de traitement');
 
         $this->actingAs($user)->get(route('subscriptions.orders.show', $order))
             ->assertOk()
-            ->assertSee('Demande reçue')
+            ->assertSee('Capture reçue sous la référence')
+            ->assertSee('data-review-countdown', false)
             ->assertSee('N’effectuez pas un second transfert');
     }
 
-    public function test_manual_otp_and_review_accept_the_current_bceao_order_quote(): void
+    public function test_pdf_is_rejected_because_payment_proof_must_be_a_screenshot(): void
     {
-        Http::preventStrayRequests();
-        config([
-            'admin.email' => 'payments-admin@example.test',
-            'license.binding_key' => str_repeat('m', 48),
-            'payments.manual_proof_root' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'bwt-manual-'.Str::uuid(),
-        ]);
-        cache()->put('fx.bceao.usd-xof.latest', [
-            'rate' => '593.5200',
-            'as_of' => now()->toDateString(),
-            'fetched_at' => now()->toIso8601String(),
-            'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
-        ], now()->addDay());
+        $this->configurePayment();
         Mail::fake();
         [$user, $order] = $this->orderForInvestor();
-        $order->forceFill([
-            'amount_xof' => 5935,
-            'fx_rate' => '593.5200',
-            'fx_rate_as_of' => now()->toDateString(),
-            'fx_rate_updated_at' => now(),
-            'fx_provider' => 'bceao-reference',
-            'fx_source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
-            'fx_fetched_at' => now(),
-            'quote_expires_at' => now()->addMinutes(30),
-        ])->save();
-
-        [$otp, $code] = $this->issueOtp($user, $order);
-        $this->assertSame('5935.00', $otp->expected_amount);
 
         $this->actingAs($user)->post(route('subscriptions.orders.manual-payment', $order), [
-            'method' => 'orange_money',
-            'manual_payment_otp' => $code,
-            'transaction_reference' => 'OM-BCEAO-2026-001',
-            'declared_amount' => '5935',
-            'transaction_occurred_at' => now()->format('Y-m-d\\TH:i'),
+            'method' => 'usdt_bep20',
             'payment_acknowledgement' => 'yes',
             'proof' => UploadedFile::fake()->createWithContent('receipt.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
-        ])->assertRedirect(route('subscriptions.orders.show', $order));
+        ])->assertSessionHasErrors('proof');
 
-        $submission = ManualPaymentSubmission::sole();
-        $this->assertSame('5935.00', $submission->expected_amount);
-        $this->assertSame('PENDING', $submission->status);
+        $this->assertDatabaseCount('manual_payment_submissions', 0);
         $this->assertDatabaseCount('payments', 0);
+        Mail::assertNothingSent();
+    }
 
-        $this->actingAs($this->admin('payments-admin@example.test'))->post(route('admin.manual-payments.approve', $submission), [
-            'verified_amount' => '5935.00',
+    public function test_only_admin_verification_of_hash_contract_recipient_amount_and_confirmations_activates_access(): void
+    {
+        Http::preventStrayRequests();
+        $this->configurePayment();
+        Mail::fake();
+        [$user, $order] = $this->orderForInvestor();
+        $this->submitScreenshot($user, $order);
+        $submission = ManualPaymentSubmission::sole();
+
+        $this->actingAs($this->admin())->post(route('admin.manual-payments.approve', $submission), [
+            'verified_amount' => '10.00',
+            'verified_transaction_hash' => '0x'.str_repeat('a', 64),
+            'verified_token_contract' => config('payments.crypto.token_contract'),
+            'verified_recipient' => $submission->recipient_snapshot,
+            'verified_confirmations' => 15,
+            'confirm_token_contract' => 'yes',
+            'confirm_recipient' => 'yes',
             'confirm_funds' => 'yes',
-            'review_note' => 'Réception réelle vérifiée sur le portefeuille',
+            'review_note' => 'Transaction contrôlée sur BscScan et montant reçu exact.',
         ])->assertRedirect(route('admin.manual-payments.index'))->assertSessionHas('status');
 
         $this->assertSame('PAID', Payment::sole()->status);
-        $this->assertSame('5935.00', Payment::sole()->amount);
-        $this->assertSame('bceao-reference', Payment::sole()->metadata['fx_provider']);
+        $this->assertSame('0x'.str_repeat('a', 64), Payment::sole()->transaction_id);
+        $this->assertSame('10.00', Payment::sole()->amount);
+        $this->assertSame('USDT', Payment::sole()->currency);
         $this->assertSame('ACTIVE', Subscription::sole()->status);
         $this->assertSame('PAID', $order->fresh()->status);
+        $this->assertSame('APPROVED', $submission->fresh()->status);
+        $this->assertSame('0x'.str_repeat('a', 64), $submission->fresh()->verified_transaction_hash);
+        $this->assertSame(15, $submission->fresh()->verified_confirmations);
+        $this->assertSame(1, License::count());
+        Mail::assertSent(ManualPaymentConfirmed::class, fn (ManualPaymentConfirmed $mail): bool => $mail->hasTo($user->email));
     }
 
-    public function test_manual_payment_code_rejects_wrong_and_replayed_values(): void
+    public function test_wrong_token_contract_cannot_activate_payment(): void
     {
-        config([
-            'admin.email' => 'payments-admin@example.test',
-            'license.binding_key' => str_repeat('q', 48),
-            'payments.manual_proof_root' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'bwt-manual-'.Str::uuid(),
-        ]);
+        $this->configurePayment();
         Mail::fake();
         [$user, $order] = $this->orderForInvestor();
-        [$otp, $code] = $this->issueOtp($user, $order);
-        $wrongCode = str_pad((string) (((int) $code + 1) % 100_000_000), 8, '0', STR_PAD_LEFT);
-        $payload = [
-            'method' => 'orange_money',
-            'manual_payment_otp' => $wrongCode,
-            'transaction_reference' => 'OM',
-            'declared_amount' => '6000',
-            'transaction_occurred_at' => now()->format('Y-m-d\\TH:i'),
-            'payment_acknowledgement' => 'yes',
-            'proof' => UploadedFile::fake()->createWithContent('receipt.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
-        ];
-
-        $invalidFormResponse = $this->actingAs($user)->post(route('subscriptions.orders.manual-payment', $order), $payload);
-        $invalidFormResponse->assertSessionHasErrors('transaction_reference');
-        $invalidFormResponse->assertSessionHas('_old_input', fn (array $oldInput): bool => !array_key_exists('manual_payment_otp', $oldInput));
-
-        $payload['transaction_reference'] = 'OM-2026-WRONG-1';
-        $wrongCodeResponse = $this->actingAs($user)->post(route('subscriptions.orders.manual-payment', $order), $payload);
-        $wrongCodeResponse->assertSessionHasErrors('manual_payment_otp');
-        $wrongCodeResponse->assertSessionHas('_old_input', fn (array $oldInput): bool => !array_key_exists('manual_payment_otp', $oldInput));
-        $this->assertSame(1, $otp->fresh()->failed_attempts);
-        $this->assertDatabaseCount('manual_payment_submissions', 0);
-
-        $payload['manual_payment_otp'] = $code;
-        $payload['transaction_reference'] = 'OM-2026-REPLAY-1';
-        $this->actingAs($user)->post(route('subscriptions.orders.manual-payment', $order), $payload)
-            ->assertRedirect(route('subscriptions.orders.show', $order));
-        $this->assertDatabaseCount('manual_payment_submissions', 1);
-
+        $this->submitScreenshot($user, $order);
         $submission = ManualPaymentSubmission::sole();
-        $this->actingAs($this->admin('payments-admin@example.test'))
-            ->post(route('admin.manual-payments.reject', $submission), [
-                'review_note' => 'Demande refusée pour vérifier la protection contre le rejeu.',
-            ])->assertRedirect(route('admin.manual-payments.index'));
 
-        $payload['transaction_reference'] = 'OM-2026-REPLAY-2';
-        $this->actingAs($user)->post(route('subscriptions.orders.manual-payment', $order), $payload)
-            ->assertSessionHasErrors('manual_payment_otp');
-        $this->assertDatabaseCount('manual_payment_submissions', 1);
+        $this->actingAs($this->admin())
+            ->from(route('admin.manual-payments.index'))
+            ->post(route('admin.manual-payments.approve', $submission), [
+                ...$this->validApprovalData($submission),
+                'verified_token_contract' => '0x'.str_repeat('0', 40),
+            ])->assertRedirect(route('admin.manual-payments.index'))
+            ->assertSessionHasErrors('verified_token_contract');
+
+        $this->assertSame('PENDING', $submission->fresh()->status);
         $this->assertDatabaseCount('payments', 0);
         $this->assertSame('AWAITING_PAYMENT', $order->fresh()->status);
     }
 
-    public function test_only_the_primary_mfa_admin_can_confirm_funds_and_activate_a_manual_payment(): void
+    public function test_duplicate_bsc_transaction_hash_is_rejected(): void
     {
-        config([
-            'admin.email' => 'admin@example.test',
-            'license.binding_key' => str_repeat('l', 48),
-            'payments.manual_proof_root' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'bwt-manual-'.Str::uuid(),
-        ]);
-        [$user, $order] = $this->orderForInvestor();
-        $proof = app(ManualPaymentProofStorage::class)->store(
-            UploadedFile::fake()->createWithContent('receipt.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
-        );
-        $submission = ManualPaymentSubmission::create([
-            'subscription_order_id' => $order->id,
-            'user_id' => $user->id,
-            'method' => 'orange_money',
-            'recipient_snapshot' => '0022667902537',
-            'expected_amount' => '6000.00',
-            'currency' => 'XOF',
-            'transaction_reference' => 'OM-REVIEW-0001',
-            'proof_path' => $proof['path'],
-            'proof_sha256' => $proof['sha256'],
-            'status' => 'PENDING',
-        ]);
-        $admin = $this->admin('admin@example.test');
+        $this->configurePayment();
+        Mail::fake();
+        [$firstUser, $firstOrder] = $this->orderForInvestor();
+        $this->submitScreenshot($firstUser, $firstOrder);
+        $first = ManualPaymentSubmission::sole();
+        $hash = '0x'.str_repeat('b', 64);
+        $admin = $this->admin();
 
-        $this->actingAs($admin)->post(route('admin.manual-payments.approve', $submission), [
-            'verified_amount' => '6000.00',
-            'confirm_funds' => 'yes',
-            'review_note' => 'Montant vu sur le portefeuille marchand',
-        ])->assertRedirect(route('admin.manual-payments.index'))
-            ->assertSessionHas('status');
+        $this->actingAs($admin)->post(route('admin.manual-payments.approve', $first), [
+            ...$this->validApprovalData($first),
+            'verified_transaction_hash' => $hash,
+        ])->assertRedirect(route('admin.manual-payments.index'));
 
-        $this->assertSame('PAID', $order->fresh()->status);
-        $this->assertSame('APPROVED', $submission->fresh()->status);
-        $this->assertSame('PAID', Payment::sole()->status);
-        $this->assertSame('manual-transfer', Payment::sole()->provider);
-        $this->assertSame('ACTIVE', Subscription::sole()->status);
-        $this->assertSame(1, License::count());
-        $this->assertDatabaseHas('audit_logs', ['action' => 'manual_payment.approved', 'entity_id' => $submission->id]);
-        $this->assertDatabaseHas('payment_webhook_events', ['provider' => 'manual-transfer', 'processing_status' => 'PROCESSED']);
+        [$secondUser, $secondOrder] = $this->orderForInvestor();
+        $this->submitScreenshot($secondUser, $secondOrder);
+        $second = ManualPaymentSubmission::whereKeyNot($first->id)->sole();
+        $this->actingAs($admin)->from(route('admin.manual-payments.index'))
+            ->post(route('admin.manual-payments.approve', $second), [
+                ...$this->validApprovalData($second),
+                'verified_transaction_hash' => strtoupper($hash),
+            ])->assertRedirect(route('admin.manual-payments.index'))
+            ->assertSessionHasErrors('verified_transaction_hash');
+
+        $this->assertSame('PENDING', $second->fresh()->status);
+        $this->assertDatabaseCount('payments', 1);
     }
 
-    public function test_admin_cannot_approve_a_receipt_with_an_amount_different_from_the_order(): void
+    public function test_admin_can_request_more_information_without_deleting_history_and_customer_can_resubmit(): void
     {
-        config([
-            'admin.email' => 'admin@example.test',
-            'license.binding_key' => str_repeat('m', 48),
-            'payments.manual_proof_root' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'bwt-manual-'.Str::uuid(),
-        ]);
+        $this->configurePayment();
+        Mail::fake();
         [$user, $order] = $this->orderForInvestor();
-        $proof = app(ManualPaymentProofStorage::class)->store(
-            UploadedFile::fake()->createWithContent('receipt.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
-        );
-        $submission = ManualPaymentSubmission::create([
-            'subscription_order_id' => $order->id,
-            'user_id' => $user->id,
-            'method' => 'orange_money',
-            'recipient_snapshot' => '0022667902537',
-            'expected_amount' => '6000.00',
-            'currency' => 'XOF',
-            'transaction_reference' => 'OM-REVIEW-0002',
-            'proof_path' => $proof['path'],
-            'proof_sha256' => $proof['sha256'],
-            'status' => 'PENDING',
-        ]);
+        $this->submitScreenshot($user, $order);
+        $first = ManualPaymentSubmission::sole();
 
-        $this->actingAs($this->admin('admin@example.test'))
+        $this->actingAs($this->admin())->post(route('admin.manual-payments.request-info', $first), [
+            'review_note' => 'Merci de joindre une capture où le montant total apparaît.',
+        ])->assertRedirect(route('admin.manual-payments.index'));
+
+        $this->assertSame('INFO_REQUIRED', $first->fresh()->status);
+        $this->actingAs($user)->get(route('subscriptions.orders.show', $order))
+            ->assertOk()->assertSee('L’administrateur demande une information');
+
+        $this->submitScreenshot($user, $order);
+        $this->assertDatabaseCount('manual_payment_submissions', 2);
+        $this->assertSame('INFO_REQUIRED', $first->fresh()->status);
+        $this->assertSame('PENDING', ManualPaymentSubmission::whereKeyNot($first->id)->sole()->status);
+        $this->assertSame('AWAITING_PAYMENT', $order->fresh()->status);
+    }
+
+    public function test_wrong_amount_cannot_be_approved(): void
+    {
+        $this->configurePayment();
+        Mail::fake();
+        [$user, $order] = $this->orderForInvestor();
+        $this->submitScreenshot($user, $order);
+        $submission = ManualPaymentSubmission::sole();
+
+        $this->actingAs($this->admin())
             ->from(route('admin.manual-payments.index'))
             ->post(route('admin.manual-payments.approve', $submission), [
-                'verified_amount' => '5999.00',
-                'confirm_funds' => 'yes',
-                'review_note' => 'Tentative avec montant différent',
+                ...$this->validApprovalData($submission),
+                'verified_amount' => '9.99',
             ])->assertRedirect(route('admin.manual-payments.index'))
             ->assertSessionHasErrors('verified_amount');
 
@@ -278,36 +233,17 @@ class ManualPaymentTest extends TestCase
 
     public function test_admin_cannot_approve_a_tampered_private_proof(): void
     {
-        config([
-            'admin.email' => 'admin@example.test',
-            'license.binding_key' => str_repeat('t', 48),
-            'payments.manual_proof_root' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'bwt-manual-'.Str::uuid(),
-        ]);
+        $this->configurePayment();
+        Mail::fake();
         [$user, $order] = $this->orderForInvestor();
-        $proof = app(ManualPaymentProofStorage::class)->store(
-            UploadedFile::fake()->createWithContent('receipt.pdf', "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"),
-        );
-        $submission = ManualPaymentSubmission::create([
-            'subscription_order_id' => $order->id,
-            'user_id' => $user->id,
-            'method' => 'orange_money',
-            'recipient_snapshot' => '0022667902537',
-            'expected_amount' => '6000.00',
-            'currency' => 'XOF',
-            'transaction_reference' => 'OM-TAMPER-0001',
-            'proof_path' => $proof['path'],
-            'proof_sha256' => $proof['sha256'],
-            'status' => 'PENDING',
-        ]);
-        file_put_contents((string) config('payments.manual_proof_root').DIRECTORY_SEPARATOR.$proof['path'], 'changed');
+        $this->submitScreenshot($user, $order);
+        $submission = ManualPaymentSubmission::sole();
+        file_put_contents((string) config('payments.manual_proof_root').DIRECTORY_SEPARATOR.$submission->proof_path, 'changed');
 
-        $this->actingAs($this->admin('admin@example.test'))
+        $this->actingAs($this->admin())
             ->from(route('admin.manual-payments.index'))
-            ->post(route('admin.manual-payments.approve', $submission), [
-                'verified_amount' => '6000.00',
-                'confirm_funds' => 'yes',
-                'review_note' => 'Reçu altéré pendant le test',
-            ])->assertRedirect(route('admin.manual-payments.index'))
+            ->post(route('admin.manual-payments.approve', $submission), $this->validApprovalData($submission))
+            ->assertRedirect(route('admin.manual-payments.index'))
             ->assertSessionHasErrors('manual_payment');
 
         $this->assertSame('PENDING', $submission->fresh()->status);
@@ -315,7 +251,45 @@ class ManualPaymentTest extends TestCase
         $this->assertSame('AWAITING_PAYMENT', $order->fresh()->status);
     }
 
-    public function test_production_manual_payments_require_https_secure_sessions_and_distinct_keys(): void
+    public function test_s3_payment_proof_upload_does_not_send_unsupported_object_acl(): void
+    {
+        config([
+            'payments.manual_proof_disk' => 's3',
+            'filesystems.disks.s3.bucket' => 'private-proof-bucket',
+            'filesystems.disks.s3.endpoint' => 'https://proofs.r2.example.test',
+            'filesystems.disks.s3.key' => 'access-key',
+            'filesystems.disks.s3.secret' => 'secret-key',
+            'filesystems.disks.s3.region' => 'auto',
+        ]);
+        $client = Mockery::mock(S3Client::class);
+        $client->shouldReceive('putObject')
+            ->once()
+            ->with(Mockery::on(function (array $parameters): bool {
+                $this->assertArrayNotHasKey('ACL', $parameters);
+                $this->assertSame('private-proof-bucket', $parameters['Bucket']);
+                return isset($parameters['Body'], $parameters['ContentType'], $parameters['Key']);
+            }))
+            ->andReturn(new Result());
+        $client->shouldReceive('getObject')->twice()
+            ->andReturn(new Result(['Body' => Utils::streamFor('screenshot bytes')]));
+        $client->shouldReceive('deleteObject')->once()->andReturn(new Result());
+
+        $objectStorage = Mockery::mock(ManualPaymentProofObjectStorage::class)->makePartial();
+        $objectStorage->shouldAllowMockingProtectedMethods()
+            ->shouldReceive('client')->times(4)->andReturn($client);
+        $this->app->instance(ManualPaymentProofObjectStorage::class, $objectStorage);
+
+        $storage = app(ManualPaymentProofStorage::class);
+        $result = $storage->store($this->screenshot());
+
+        $this->assertMatchesRegularExpression('/^[a-f0-9-]{36}\.png$/', $result['path']);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $result['sha256']);
+        $this->assertSame('screenshot bytes', $storage->contents($result['path']));
+        $this->assertTrue($storage->matchesHash($result['path'], hash('sha256', 'screenshot bytes')));
+        $storage->delete($result['path']);
+    }
+
+    public function test_production_manual_payments_require_https_secure_sessions_durable_private_storage_and_distinct_keys(): void
     {
         config([
             'app.env' => 'production',
@@ -326,6 +300,8 @@ class ManualPaymentTest extends TestCase
             'session.secure' => true,
             'session.encrypt' => true,
             'payments.manual_live_verified' => true,
+            'payments.manual_proof_storage_persistent' => false,
+            'payments.manual_proof_disk' => 'local',
             'legal.operator_name' => 'FASO DIGITAL TRADING',
             'legal.operator_address' => 'Ouagadougou',
             'legal.operator_email' => 'legal@example.test',
@@ -334,20 +310,60 @@ class ManualPaymentTest extends TestCase
         $readiness = app(ManualPaymentReadiness::class);
 
         $this->assertFalse($readiness->isReady());
-        config(['app.url' => 'https://payments.example.test']);
+        config(['app.url' => 'https://payments.example.test', 'payments.manual_proof_storage_persistent' => true]);
         $this->assertTrue($readiness->isReady());
-        config(['session.secure' => false]);
+        config([
+            'payments.manual_proof_disk' => 's3',
+            'filesystems.disks.s3.bucket' => '',
+            'filesystems.disks.s3.region' => 'eu-central-1',
+        ]);
         $this->assertFalse($readiness->isReady());
-        config(['session.secure' => true, 'session.encrypt' => false]);
+        config([
+            'filesystems.disks.s3.bucket' => 'private-proof-bucket',
+            'filesystems.disks.s3.endpoint' => 'https://proofs.r2.example.test',
+            'filesystems.disks.s3.key' => 'access-key',
+            'filesystems.disks.s3.secret' => 'secret-key',
+        ]);
+        $this->assertTrue($readiness->isReady());
+        config(['filesystems.disks.s3.endpoint' => 'http://proofs.r2.example.test']);
         $this->assertFalse($readiness->isReady());
-        config(['session.encrypt' => true, 'app.debug' => true]);
+        config(['payments.manual_proof_disk' => 'public']);
         $this->assertFalse($readiness->isReady());
-        config(['app.debug' => false, 'license.binding_key' => str_repeat('a', 40)]);
-        $this->assertFalse($readiness->isReady());
-        config(['license.binding_key' => str_repeat('b', 48), 'payments.manual_live_verified' => false]);
-        $this->assertFalse($readiness->isReady());
-        config(['payments.manual_live_verified' => true, 'legal.disclosures_approved' => false]);
-        $this->assertFalse($readiness->isReady());
+    }
+
+    private function configurePayment(): void
+    {
+        config([
+            'admin.email' => 'payments-admin@example.test',
+            'license.binding_key' => str_repeat('k', 48),
+            'payments.manual_proof_disk' => 'local',
+            'payments.manual_proof_root' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'bwt-manual-'.Str::uuid(),
+            'payments.crypto.minimum_confirmations' => 15,
+        ]);
+    }
+
+    private function submitScreenshot(User $user, SubscriptionOrder $order): void
+    {
+        $this->actingAs($user)->post(route('subscriptions.orders.manual-payment', $order), [
+            'method' => 'usdt_bep20',
+            'payment_acknowledgement' => 'yes',
+            'proof' => $this->screenshot(),
+        ])->assertRedirect(route('subscriptions.orders.show', $order));
+    }
+
+    private function validApprovalData(ManualPaymentSubmission $submission): array
+    {
+        return [
+            'verified_amount' => (string) $submission->expected_amount,
+            'verified_transaction_hash' => '0x'.str_repeat('c', 64),
+            'verified_token_contract' => config('payments.crypto.token_contract'),
+            'verified_recipient' => $submission->recipient_snapshot,
+            'verified_confirmations' => 15,
+            'confirm_token_contract' => 'yes',
+            'confirm_recipient' => 'yes',
+            'confirm_funds' => 'yes',
+            'review_note' => 'Transaction contrôlée sur BscScan et montant reçu exact.',
+        ];
     }
 
     private function orderForInvestor(): array
@@ -394,25 +410,20 @@ class ManualPaymentTest extends TestCase
         return [$user, $order];
     }
 
-    private function issueOtp(User $user, SubscriptionOrder $order): array
+    private function screenshot(): UploadedFile
     {
-        $this->actingAs($user)->post(route('subscriptions.orders.manual-payment.otp', $order), [
-            'method' => 'orange_money',
-        ])->assertRedirect(route('subscriptions.orders.show', $order));
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlK8L8AAAAASUVORK5CYII=', true);
+        $this->assertIsString($png);
 
-        $response = $this->actingAs($user)->get(route('subscriptions.orders.show', $order))->assertOk();
-        preg_match('/class="otp-code" type="text" value="([0-9]{8})"/', (string) $response->getContent(), $matches);
-        $this->assertArrayHasKey(1, $matches, 'The one-time code should be shown after it is generated.');
-
-        return [ManualPaymentOtp::latest('id')->firstOrFail(), $matches[1]];
+        return UploadedFile::fake()->createWithContent('capture.png', $png);
     }
 
-    private function admin(string $email): User
+    private function admin(): User
     {
         $admin = User::create([
             'first_name' => 'Admin',
             'last_name' => 'Test',
-            'email' => $email,
+            'email' => 'payments-admin@example.test',
             'password' => 'a-long-test-password',
             'role' => 'ADMIN',
             'status' => 'ACTIVE',

@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\Fx\BceaoReferenceRateService;
+use App\Services\Fx\FixedUsdXofRateService;
 use Illuminate\Http\JsonResponse;
 
 final class PublicFxRateController
 {
-    public function __invoke(BceaoReferenceRateService $rates): JsonResponse
+    public function __invoke(FixedUsdXofRateService $rates): JsonResponse
     {
         $quote = $rates->latest();
 
@@ -16,11 +16,11 @@ final class PublicFxRateController
             'usable' => $quote?->canBeUsedForCheckout() ?? false,
             'rate' => $quote?->rate,
             'as_of' => $quote?->asOf->toDateString(),
-            'updated_at' => $quote?->asOf->toIso8601String(),
+            'updated_at' => $quote?->updatedAt->toIso8601String(),
             'fetched_at' => $quote?->fetchedAt->toIso8601String(),
             'source_url' => $quote?->sourceUrl,
-            'provider' => $quote ? 'bceao-reference' : null,
-            'stale' => $quote?->stale ?? false,
+            'provider' => $quote?->provider,
+            'stale' => false,
         ])->header('Cache-Control', 'private, no-store');
     }
 }

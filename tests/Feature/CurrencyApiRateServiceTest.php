@@ -38,26 +38,19 @@ class CurrencyApiRateServiceTest extends TestCase
         $this->assertNull(app(CurrencyApiRateService::class)->refresh());
     }
 
-    public function test_public_rate_endpoint_uses_an_explicit_bceao_reference_quote_without_network_access(): void
+    public function test_public_rate_endpoint_uses_the_fixed_payment_rate_without_network_access(): void
     {
         config(['fx.currencyapi.api_key' => 'must-not-be-used']);
         Http::preventStrayRequests();
-        cache()->put('fx.bceao.usd-xof.latest', [
-            'rate' => '593.5200',
-            'as_of' => now()->toDateString(),
-            'fetched_at' => now()->toIso8601String(),
-            'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
-        ], now()->addDay());
-
         $this->getJson(route('fx.usd-xof'))
             ->assertOk()
             ->assertJson([
                 'available' => true,
                 'usable' => true,
-                'rate' => '593.5200',
+                'rate' => '600.0000',
                 'as_of' => now()->toDateString(),
-                'provider' => 'bceao-reference',
-                'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
+                'provider' => 'fixed-600',
+                'source_url' => '',
                 'stale' => false,
             ]);
     }

@@ -1,6 +1,6 @@
 # FASO DIGITAL TRADING — audit et préparation
 
-État du dépôt local au 15 novembre 2026. Ce document décrit le code et la base locale vérifiés; il ne décrit pas une publication sur le domaine Bubble.
+État du dépôt local au 16 novembre 2026. Ce document décrit le code et la base locale vérifiés; il ne décrit pas une publication sur le domaine Bubble.
 
 ## Espace administrateur
 
@@ -22,10 +22,12 @@ La base locale contient un compte investisseur et le compte ADMIN principal conf
 ## Catalogue, devises et paiements
 
 - Le catalogue public expose uniquement STARTER, STANDARD, PRO et PREMIUM; les offres historiques restent archivées et inaccessibles aux nouvelles souscriptions.
-- Les prix USD restent la référence commerciale. L’équivalence XOF des nouvelles commandes s’appuie sur le taux quotidien officiel BCEAO; son instantané, la date publiée et la source sont enregistrés sur la commande.
-- Aucun cours absent, périmé ou invalide ne peut servir à démarrer un paiement. `php artisan blackwolf:refresh-fx` interroge la source officielle en environnement réel et affiche clairement l’échec si le cours utilisable n’est pas disponible. Le parseur est testé avec des fixtures, sans requête réseau implicite des tests.
-- PayDunya est le prestataire prévu. Le checkout live requiert les clés marchandes, `PAYMENT_PROVIDER=paydunya`, une URL publique HTTPS joignable, les mentions légales renseignées et approuvées, et un cours BCEAO admissible. L’indicateur `PAYDUNYA_LIVE_VERIFIED` n’empêche pas la première facture; aucun abonnement ne s’active sans callback signé et confirmation serveur PayDunya. Un contrôle GET de confirmation avec un token aléatoire inexistant a répondu HTTP 200 / code PayDunya `1001` « Invalid Masterkey Specified »; aucune facture ni aucun paiement n’a été créé. Le runtime PHP local ne dispose pas de `curl.cainfo`/`openssl.cafile`, il faut aussi un bundle CA fiable sur l’hébergement.
-- Les transferts manuels Orange Money, Moov Money, Wave, Sank et USDT BEP20 utilisent le montant enregistré sur la commande BCEAO. OTP, référence unique, reçu privé, empreinte SHA-256, contrôle de l’administrateur et confirmation exacte du montant sont implémentés. Ce flux ne se connecte pas aux portefeuilles et ne vérifie pas une transaction blockchain automatiquement.
+- Les prix USD restent la référence commerciale. Tous les nouveaux montants en XOF utilisent le taux fixe convenu de 600 XOF par USD; le taux et le montant sont enregistrés sur la commande. Aucune API de change n’est appelée.
+- La commande `php artisan blackwolf:refresh-fx` vérifie le taux fixe localement et n’effectue aucune requête réseau.
+- Les nouveaux paiements utilisent Binance-Peg BSC-USD (USDT BEP20) sur BNB Smart Chain. Le montant USDT reprend la valeur numérique du prix USD; XOF est informatif. Le client envoie uniquement une capture JPG/PNG; une référence REQ interne est générée. L’administrateur vérifie manuellement sur BscScan le hash réel, le contrat accepté, le destinataire, le montant et au moins 15 confirmations. La capture est conservée dans un stockage privé et jointe à l’alerte SMTP si le transport est prêt. Aucun RPC ni API blockchain n’est configuré; aucune capture ne vaut confirmation.
+- Après approbation, le processeur active l’abonnement et la licence; un courriel de confirmation est envoyé au client. Si SMTP échoue ou reste incomplet, l’état de l’e-mail est enregistré et l’administrateur peut réessayer sans annuler l’activation.
+- Le stockage local est protégé et n’est pas considéré durable sur Laravel Cloud. L'adaptateur Flysystem S3 et l'AWS SDK sont installés. `ManualPaymentProofObjectStorage` parle à R2 sans envoyer d'ACL par objet ni checksum facultatif; la confidentialité doit être définie au niveau du bucket. `ManualPaymentReadiness` bloque les paiements production tant que bucket, région, identifiants et endpoint HTTPS manquent ou que la persistance privée n’est pas attestée. Le test réel d'écriture/lecture du bucket reste à faire en préproduction.
+- Les nouveaux checkouts PayDunya et les paiements mobile money sont désactivés. Le connecteur PayDunya et ses paramètres historiques sont conservés uniquement pour rapprocher d’anciennes transactions; ils ne peuvent pas être sélectionnés pour de nouvelles commandes. Aucune clé PayDunya existante n’a été modifiée.
 - Une licence et un abonnement payant ne sont activés qu’après un événement de paiement confirmé ou une vérification manuelle explicite avec référence, inscrite dans l’audit.
 
 ## Autres services et limites réelles
@@ -34,24 +36,26 @@ La base locale contient un compte investisseur et le compte ADMIN principal conf
 |---|---|---|
 | Centre administrateur | **OPÉRATIONNEL ET TESTÉ** localement; routes et rôles sont couverts par PHPUnit | Créer le compte ADMIN localement et enrôler le TOTP |
 | E-mails de compte | **EN ATTENTE DE TEST RÉEL**; configuration présente, réception non attestée | Tester depuis le serveur de déploiement, confirmer la réception puis activer le marqueur de validation |
-| Paiement PayDunya | **EN ERREUR ET BLOQUÉ**; l’API de production refuse la Master Key (`1001`); l’URL HTTPS publique et les informations légales approuvées manquent aussi | Reprendre la Master Key de la même application PayDunya en mode production, déployer Laravel avec HTTPS et CA système, renseigner/approuver les mentions légales, puis vérifier un paiement réel |
-| Transferts manuels | **PARTIELLEMENT OPÉRATIONNELS**; contrôles et revue réelle implémentés, aucun portefeuille connecté | Vérifier les comptes bénéficiaires, les conditions marchands, les mentions légales et l’exploitation en production |
-| Référence USD/XOF | **PARTIELLEMENT OPÉRATIONNELLE**; source BCEAO et calcul implémentés/testés, disponibilité réseau de production non confirmée | Autoriser l’accès HTTPS sortant à `www.bceao.int` et vérifier la commande de rafraîchissement sur l’hébergement |
+| Paiement Binance-Peg BSC-USD | **PARTIELLEMENT OPÉRATIONNEL ET TESTÉ**; capture seule, pièce jointe mail, contrôle hash/contrat/destinataire/montant/confirmations, anti-doublon et activation admin MFA; aucune validation automatique | Configurer et tester SMTP; configurer un bucket R2 privé avec accès lecture/écriture, tester l'écriture/lecture/suppression et attester la persistance avant toute acceptation de capture en production; vérifier le portefeuille et l’exploitation réelle |
+| PayDunya / paiements mobiles | **DÉSACTIVÉS POUR LES NOUVELLES COMMANDES**; paramètres et données PayDunya historiques conservés | Rapprocher toute facture PayDunya déjà émise avant d’envisager sa fermeture côté marchand |
+| Conversion USD/XOF | **OPÉRATIONNELLE ET TESTÉE**; taux fixe de 600 XOF par USD, sans service externe | Confirmer le tarif affiché après déploiement |
 | TradingView | **PARTIELLEMENT OPÉRATIONNEL** côté navigateur | Tester disponibilité, symboles, latence et droits de diffusion sur le domaine public |
 | MT5 | **PARTIELLEMENT OPÉRATIONNEL** en lecture seule; les vues admin consultent uniquement les valeurs enregistrées | Jeton MetaApi lecteur, autorisation du compte, endpoint HTTPS et test réel sur compte autorisé |
 | Licences EA | **RÈGLES SERVEUR OPÉRATIONNELLES ET TESTÉES** | Tester l’EA `.mq5` réel sur MetaTrader et l’API déployée en HTTPS |
 | BRVM / Coris Bourse | **EN ATTENTE D’AUTORISATION**; demandes locales uniquement, aucun cours ni transfert automatique | Contrat de diffusion BRVM, flux officiel et canal ainsi qu’un mandat autorisés par Coris Bourse |
 | Calendrier économique | **NON DÉVELOPPÉ/CONNECTÉ** | Fournisseur autorisé, accès et droits de rediffusion |
 | BLACK WOLF AI / GOLD INTELLIGENCE / XAUUSD | **NON DÉVELOPPÉS/CONNECTÉS**; aucune prévision réelle n’est générée | Source de données, accès, spécification, validation et gouvernance du modèle |
-| Hébergement Laravel Cloud | **CHOISI, NON DÉPLOYÉ**; dépôt Git local initialisé, sans dépôt distant ni compte Cloud relié | Créer le compte et connecter un dépôt privé; fournir le domaine public; intégrer le stockage objet privé, migrer SQLite vers MySQL et tester avant de basculer les paiements |
+| Hébergement Laravel Cloud | **CHOISI, NON DÉPLOYÉ**; dépôt local sur `main`, remote GitHub `origin` configuré, changements de travail non commités, Laravel Cloud non relié | Examiner et commiter les changements, relier Laravel Cloud au dépôt privé; fournir le domaine public; configurer le stockage objet privé, migrer SQLite vers MySQL et tester avant d'activer les paiements |
 
 ## Base de données et sauvegarde
 
 La migration additive `034_complete_admin_console` est appliquée à la base SQLite locale. Avant application, la base a été copiée et vérifiée par SHA-256 dans `work/backups/black-wolf-before-admin-console-20261115-102028.sqlite`. Les effectifs relevés avant et après sont identiques : 1 utilisateur, 5 commandes, 0 paiement, 0 abonnement, 0 licence, 0 commission et 0 ticket/support message. La migration ajoute la suppression logique des utilisateurs, les colonnes de rapprochement des versements et les champs de classification/support; aucune donnée existante n’a été supprimée.
 
+La migration additive `035_secure_crypto_payment_review` n'a pas été appliquée à la base SQLite locale; la suite de tests l'exécute sur une base SQLite en mémoire. Faire une sauvegarde restaurable et contrôler les migrations avant de l’appliquer à une base contenant des données.
+
 ## Validation
 
-La suite complète PHPUnit a été exécutée après les corrections de paiement : 132 tests et 897 assertions réussis. Elle utilise SQLite en mémoire, ne fait pas de débits ni d’appels MT5/BRVM/Coris et utilise des fixtures locales pour les API.
+La suite complète PHPUnit a été exécutée après les corrections de paiement : 135 tests et 953 assertions réussis. Elle utilise SQLite en mémoire, ne fait pas de débits ni d’appels MT5/BRVM/Coris, SMTP ou blockchain.
 
 ```powershell
 php vendor/bin/phpunit

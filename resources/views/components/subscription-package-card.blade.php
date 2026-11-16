@@ -15,13 +15,13 @@
         <div><dt>Capital minimum requis</dt><dd>{{ number_format((float) $plan->capital_required, 2, ',', ' ') }} USD</dd></div>
         <div class="subscription-model-price"><dt>Abonnement mensuel</dt><dd>{{ number_format((float) $plan->price, 2, ',', ' ') }} USD</dd></div>
         <div class="subscription-model-conversion">
-            <dt>Équivalence FCFA BCEAO</dt>
+            <dt>Équivalence FCFA · taux fixe</dt>
             @if($xofAmount !== null)
                 <dd>≈ {{ number_format($xofAmount, 0, ',', ' ') }} XOF</dd>
-                <small>{{ $rateUsable ? 'Cours BCEAO publié le' : 'Cours BCEAO ancien · actualisation requise' }} {{ $fxQuote->asOf->format('d/m/Y') }}</small>
+                <small>{{ $rateUsable ? 'Taux appliqué : 1 USD = 600 XOF' : 'Taux fixe indisponible' }}</small>
             @else
                 <dd>Indisponible</dd>
-                <small>La conversion sera affichée dès qu’un cours officiel valide sera disponible.</small>
+                <small>La conversion sera affichée dès que le taux fixe sera valide.</small>
             @endif
         </div>
         <div><dt>Gain journalier prévisionnel</dt><dd>{{ number_format((float) $plan->estimated_daily_gain_usd, 2, ',', ' ') }} USD · indicatif</dd></div>

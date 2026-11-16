@@ -9,5 +9,5 @@ return [
     'disclosures_approved' => (bool) env('LEGAL_DISCLOSURES_APPROVED', false),
     'terms_version' => env('TERMS_VERSION', 'terms-v2'),
     'contact_notice_version' => env('CONTACT_NOTICE_VERSION', 'contact-v2'),
-    'manual_payment_terms_version' => env('MANUAL_PAYMENT_TERMS_VERSION', 'manual-payment-v1'),
+    'manual_payment_terms_version' => env('MANUAL_PAYMENT_TERMS_VERSION', 'manual-payment-v2-crypto'),
 ];

@@ -9,6 +9,8 @@ use RuntimeException;
 
 final class ManualPaymentProofStorage
 {
+    public function __construct(private readonly ManualPaymentProofObjectStorage $objectStorage) {}
+
     /** @return array{path: string, sha256: string} */
     public function store(UploadedFile $file): array
     {
@@ -26,7 +28,13 @@ final class ManualPaymentProofStorage
         }
 
         $path = Str::uuid().'.'.$extension;
-        $storedPath = $this->disk()->putFileAs('', $file, $path);
+        if (config('payments.manual_proof_disk') === 's3') {
+            $this->objectStorage->store($path, $file, $mime);
+
+            return ['path' => $path, 'sha256' => $sha256];
+        }
+
+        $storedPath = $this->localDisk()->putFileAs('', $file, $path, ['visibility' => 'private']);
         if (!is_string($storedPath) || $storedPath === '') {
             throw new RuntimeException('The payment proof could not be stored privately.');
         }
@@ -34,26 +42,34 @@ final class ManualPaymentProofStorage
         return ['path' => $storedPath, 'sha256' => $sha256];
     }
 
-    public function downloadPath(string $path): string
+    public function contents(string $path): string
     {
         if (!preg_match('/^[a-f0-9-]{36}\.(?:pdf|jpg|png)$/i', $path)) {
             throw new RuntimeException('The stored payment proof path is invalid.');
         }
 
-        $disk = $this->disk();
-        $fullPath = $disk->path($path);
-        if (!$disk->exists($path) || !is_file($fullPath)) {
+        if (config('payments.manual_proof_disk') === 's3') {
+            return $this->objectStorage->contents($path);
+        }
+
+        $disk = $this->localDisk();
+        if (!$disk->exists($path)) {
             throw new RuntimeException('The stored payment proof is missing.');
         }
 
-        return $fullPath;
+        $contents = $disk->get($path);
+        if (!is_string($contents)) {
+            throw new RuntimeException('The stored payment proof could not be read.');
+        }
+
+        return $contents;
     }
 
     public function matchesHash(string $path, string $expectedHash): bool
     {
         try {
-            $actualHash = hash_file('sha256', $this->downloadPath($path));
-        } catch (RuntimeException) {
+            $actualHash = hash('sha256', $this->contents($path));
+        } catch (\Throwable) {
             return false;
         }
 
@@ -68,15 +84,27 @@ final class ManualPaymentProofStorage
             throw new RuntimeException('The stored payment proof path is invalid.');
         }
 
-        $this->disk()->delete($path);
+        if (config('payments.manual_proof_disk') === 's3') {
+            $this->objectStorage->delete($path);
+
+            return;
+        }
+
+        $this->localDisk()->delete($path);
     }
 
-    private function disk()
+    private function localDisk()
     {
+        $disk = (string) config('payments.manual_proof_disk', 'local');
+        if ($disk !== 'local') {
+            throw new RuntimeException('Payment proof storage disk is not supported.');
+        }
+
         return Storage::build([
             'driver' => 'local',
             'root' => (string) config('payments.manual_proof_root', storage_path('app/private/manual-payment-proofs')),
             'throw' => true,
+            'visibility' => 'private',
         ]);
     }
 }

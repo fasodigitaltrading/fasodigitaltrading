@@ -58,7 +58,7 @@ class BceaoReferenceRateTest extends TestCase
         $this->assertTrue($rate->canBeUsedForCheckout());
     }
 
-    public function test_refresh_command_reports_the_official_rate_and_never_claims_a_fixed_fallback(): void
+    public function test_refresh_command_reports_the_fixed_payment_rate_without_network_access(): void
     {
         Http::preventStrayRequests();
         cache()->put('fx.bceao.usd-xof.latest', [
@@ -72,9 +72,9 @@ class BceaoReferenceRateTest extends TestCase
         $output = Artisan::output();
 
         $this->assertSame(0, $exit);
-        $this->assertStringContainsString('593.5200', $output);
-        $this->assertStringContainsString('www.bceao.int', $output);
-        $this->assertStringNotContainsString('600 XOF', $output);
+        $this->assertStringContainsString('1 USD = 600 XOF', $output);
+        $this->assertStringNotContainsString('www.bceao.int', $output);
+        $this->assertStringNotContainsString('593.5200', $output);
     }
 
     public function test_parser_rejects_pages_without_a_valid_official_rate_and_date(): void

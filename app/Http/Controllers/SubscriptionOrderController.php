@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\PaymentProviderUnavailable;
 use App\Models\SubscriptionOrder;
 use App\Models\SubscriptionPlan;
-use App\Services\Fx\BceaoReferenceRateService;
+use App\Services\Fx\FixedUsdXofRateService;
 use App\Services\ManualPaymentReadiness;
 use App\Services\SubscriptionOrderQuoteValidator;
 use App\Services\PaymentProviderFactory;
@@ -14,7 +14,6 @@ use App\Services\SubscriptionOrderCreator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use RuntimeException;
@@ -57,7 +56,7 @@ class SubscriptionOrderController extends Controller
     public function refreshQuote(
         Request $request,
         SubscriptionOrder $order,
-        BceaoReferenceRateService $rates,
+        FixedUsdXofRateService $rates,
     ): RedirectResponse {
         abort_unless((int) $order->user_id === (int) $request->user()->id, 404);
         abort_unless(in_array($order->status, ['AWAITING_PAYMENT', 'PAYMENT_FAILED'], true), 409);
@@ -70,9 +69,9 @@ class SubscriptionOrderController extends Controller
             'amount_xof' => $amountXof,
             'fx_rate' => $rate?->rate,
             'fx_rate_as_of' => $rate?->asOf->toDateString(),
-            'fx_rate_updated_at' => $rate?->asOf,
-            'fx_provider' => $rate ? 'bceao-reference' : null,
-            'fx_source_url' => $rate?->sourceUrl,
+            'fx_rate_updated_at' => $rate?->updatedAt,
+            'fx_provider' => $rate?->provider,
+            'fx_source_url' => $rate?->sourceUrl !== '' ? $rate?->sourceUrl : null,
             'fx_fetched_at' => $rate?->fetchedAt,
             'quote_expires_at' => $usable
                 ? now()->addMinutes(max(1, (int) config('fx.quote_valid_minutes', 30)))
@@ -81,8 +80,8 @@ class SubscriptionOrderController extends Controller
 
         return redirect()->route('subscriptions.orders.show', $order)
             ->with($usable ? 'status' : 'fx_quote_unavailable', $usable
-                ? 'Le montant a été recalculé avec le dernier taux de référence publié par la BCEAO.'
-                : 'Le taux officiel BCEAO n’est pas disponible ou assez récent; aucun paiement ne peut être lancé.');
+                ? 'Le montant a été recalculé avec le taux fixe de 600 XOF pour 1 USD.'
+                : 'Le montant ne peut pas être converti avec le taux fixe configuré; aucun paiement ne peut être lancé.');
     }
 
     public function prepareBeforeEmailVerification(
@@ -140,27 +139,6 @@ class SubscriptionOrderController extends Controller
         }
 
         $latestManualSubmission = $order->manualPaymentSubmissions->sortByDesc('id')->first();
-        $activeManualPaymentOtp = $order->manualPaymentOtps()
-            ->where('user_id', $request->user()->id)
-            ->whereNull('used_at')
-            ->whereNull('invalidated_at')
-            ->where('expires_at', '>', now())
-            ->latest('id')
-            ->first();
-        $manualPaymentOtpCode = null;
-        $encryptedOtp = $request->session()->pull('manual_payment_otp');
-        if (is_string($encryptedOtp) && $encryptedOtp !== '') {
-            try {
-                $payload = json_decode(Crypt::decryptString($encryptedOtp), true, flags: JSON_THROW_ON_ERROR);
-                if ((int) ($payload['order_id'] ?? 0) === (int) $order->id
-                    && (int) ($payload['otp_id'] ?? 0) === (int) ($activeManualPaymentOtp?->id ?? 0)
-                    && preg_match('/^\d{8}$/', (string) ($payload['code'] ?? '')) === 1) {
-                    $manualPaymentOtpCode = (string) $payload['code'];
-                }
-            } catch (\Throwable) {
-                $manualPaymentOtpCode = null;
-            }
-        }
         $manualPaymentReady = $manualPaymentReadiness->isReady();
         $manualPaymentAvailable = in_array($order->status, ['AWAITING_PAYMENT', 'PAYMENT_FAILED'], true)
             && $quotes->canPayNow($order)
@@ -177,8 +155,7 @@ class SubscriptionOrderController extends Controller
             'manualPaymentAvailable' => $manualPaymentAvailable,
             'manualPaymentReady' => $manualPaymentReady,
             'latestManualSubmission' => $latestManualSubmission,
-            'activeManualPaymentOtp' => $activeManualPaymentOtp,
-            'manualPaymentOtpCode' => $manualPaymentOtpCode,
+            'crypto' => config('payments.crypto'),
         ]);
     }
 
@@ -206,7 +183,7 @@ class SubscriptionOrderController extends Controller
             );
         } catch (RuntimeException $exception) {
             return back()->withErrors([
-                'payment' => 'Le paiement ne peut pas être lancé : vérifiez la validité du taux BCEAO enregistré, de la commande et la configuration réelle du compte marchand.',
+                'payment' => 'Le paiement ne peut pas être lancé : vérifiez le taux fixe enregistré, la commande et la configuration réelle du compte marchand.',
             ]);
         }
 

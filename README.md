@@ -11,16 +11,20 @@ Application Laravel pour le site public, les comptes, abonnements, licences MT5 
 
 ## Développement local
 
-Prérequis : PHP 8.4.1 ou plus récent avec `pdo_sqlite`, `mbstring`, `openssl`, `curl` et `zip`; Composer 2.
+Prérequis : PHP 8.4.1 ou plus récent avec `pdo_sqlite`, `mbstring`, `openssl`, `curl` et `zip`; Composer 2; Node 20.19+ et pnpm pour le QR local et les ressources frontend.
 
 ```powershell
 Copy-Item .env.example .env
 if (!(Test-Path database/black-wolf-local.sqlite)) { New-Item -ItemType File -Path database/black-wolf-local.sqlite }
 composer install
+pnpm install --frozen-lockfile
+pnpm build
 php artisan key:generate
 php artisan migrate --seed
-php artisan serve
+.\scripts\serve-local.ps1
 ```
+
+Le script lance le serveur PHP directement avec un dossier temporaire d’envoi accessible en écriture. Il règle aussi `APP_URL` pour ce seul processus afin que les liens envoyés par e-mail utilisent le port de l’aperçu. Si PHP n’est pas dans `PATH`, passez son chemin : `.\scripts\serve-local.ps1 -PhpExecutable 'C:\chemin\vers\php.exe'`.
 
 Avant d’utiliser l’API de licence, générez une clé HMAC distincte de `APP_KEY` et définissez `LICENSE_BINDING_KEY` dans `.env` :
 
@@ -51,11 +55,11 @@ Le formulaire de contact et l’inscription gardent la date et la version des co
 - Les inscriptions publiques restent fermées tant que ces paramètres ne sont pas configurés et qu’un test SMTP vers `ADMIN_EMAIL` n’a pas été reçu par l’administrateur. Le bouton de test est accessible uniquement à l’administrateur principal après MFA. Après réception vérifiée, l’exploitant définit `MAIL_LIVE_VERIFIED=true` dans l’environnement secret du serveur. Une réponse SMTP acceptée ne prouve pas l’arrivée en boîte.
 - Chaque inscription envoie la vérification signée à durée limitée, le message de bienvenue et une alerte à `ADMIN_EMAIL`; le renvoi est limité à trois par heure. Aucun secret SMTP ne doit être versionné. Les courriels sont envoyés de manière synchrone; aucun worker de queue n’est requis pour la vérification actuelle.
 - `ADMIN_EMAIL` est l’unique identité administrateur autorisée. Créer le compte avec `php artisan blackwolf:create-admin`, puis enrôler l’application TOTP au premier accès. Les routes et politiques admin vérifient aussi cette adresse et le TOTP.
-- Les tarifs enregistrés restent en USD; le cours quotidien de référence USD/XOF provient de la page officielle BCEAO. Un cours absent ou périmé bloque le paiement; aucun taux de remplacement fixe n’est appliqué aux nouvelles commandes.
-- Chaque commande conserve le tarif USD, le montant XOF, le cours, sa date de publication et la source. Aucun montant envoyé par le navigateur n’est accepté.
-- Le checkout PayDunya exige les trois clés marchandes, `PAYMENT_PROVIDER=paydunya`, une URL publique HTTPS joignable, des mentions légales renseignées et approuvées, un cours BCEAO admissible et une configuration de production sécurisée. `PAYDUNYA_LIVE_VERIFIED` est un indicateur d’exploitation et ne bloque pas la première facture live. Aucun abonnement ni licence ne s’active sans callback signé puis confirmation serveur PayDunya du montant et du statut.
-- À défaut de PayDunya, le parcours de transfert manuel accepte les moyens configurés dans l’application et une preuve conservée en stockage privé. Le transfert n’est pas exécuté par la plateforme; l’administrateur vérifie les fonds réellement reçus avant de créer le paiement et activer l’abonnement. En production, le parcours exige HTTPS, cookies sécurisés, sessions chiffrées, `APP_DEBUG=false` et des clés distinctes et valides.
-- Les moyens manuels nécessitent la validation du compte bénéficiaire et des conditions marchand par l’opérateur. USDT BEP20 n’a pas de vérification blockchain automatisée; l’administrateur doit contrôler le hash sur le réseau avant d’approuver.
+- Les tarifs restent en USD. L’équivalence XOF affichée utilise le taux fixe convenu de 1 USD = 600 XOF; aucun service de change BCEAO ou autre API n’est appelé. Le paiement crypto demandé reste égal au montant numérique du tarif en USDT.
+- Chaque commande conserve le tarif USD et son équivalence XOF fixe, avec le taux et la date de calcul. Aucun montant envoyé par le navigateur n’est accepté.
+- Les nouvelles souscriptions acceptent uniquement Binance-Peg BSC-USD (USDT BEP20) sur BNB Smart Chain, avec le contrat et l’adresse de réception déclarés dans `config/payments.php`. Le montant numérique du prix USD est le montant attendu en USDT; l’équivalence XOF au taux fixe de 600 XOF par USD reste informative.
+- Après le transfert, le client envoie uniquement une capture JPG/PNG. Elle est stockée dans un disque privé, jointe au courriel administrateur lorsque SMTP est prêt, et vérifiée par empreinte SHA-256. La référence REQ est interne : le client ne saisit ni hash, ni montant, ni OTP. L’administrateur retrouve le hash réel sur BscScan et contrôle le contrat, le destinataire, le montant exact et au moins le nombre de confirmations configuré. Aucun RPC ou API blockchain n’est utilisé et aucune activation n’intervient avant approbation manuelle. Le client reçoit un courriel après confirmation.
+- Aucun nouveau checkout PayDunya ni paiement mobile n’est activé. Le connecteur et les clés historiques PayDunya sont conservés pour le rapprochement des transactions déjà enregistrées; ils ne sélectionnent pas un moyen de paiement pour une nouvelle commande. En production, le parcours crypto exige HTTPS, cookies sécurisés, sessions chiffrées, `APP_DEBUG=false`, des clés distinctes, les mentions légales requises et un stockage privé persistant. L’acceptation reste bloquée tant que le bucket privé et sa persistance ne sont pas configurés et vérifiés.
 - Le graphique d’accueil utilise le Web Component officiel TradingView et son flux de données intégré. Il dépend du chargement externe TradingView et de la disponibilité de ses marchés; aucune API TradingView privée ni extraction par scraping n’est utilisée.
 - L'EA MQL5 doit autoriser le domaine HTTPS de validation de licence dans la liste WebRequest de MetaTrader.
 
@@ -71,10 +75,10 @@ Les tests automatisés n'appellent pas les API de paiement, SMTP, TradingView ou
 
 ## État actuel des intégrations
 
-- Conversion USD/XOF : référence quotidienne BCEAO; parser et calcul testés avec des fixtures officielles, mais la connectivité externe en production reste à vérifier.
-- Les envois SMTP, le checkout PayDunya et les synchronisations MetaApi restent désactivés en l'absence de configuration complète et d'un test réel attesté par l'exploitant.
-- Les transferts manuels sont partiellement opérationnels dans le code local; l’abonnement n’est activé qu’après vérification admin MFA et contrôle exact du montant.
-- L’identité administrateur autorisée est `fasodigitaltrading@gmail.com`. La base locale n’a pas encore de compte admin; utilisez la commande d’amorçage ci-dessus et choisissez le mot de passe dans votre terminal, puis enrôlez le MFA au premier accès.
+- Conversion USD/XOF : taux fixe 600 XOF par USD appliqué côté serveur; aucun flux de change externe n’est utilisé.
+- Les envois SMTP et les synchronisations MetaApi restent désactivés en l'absence de configuration complète et d'un test réel attesté par l'exploitant. Les nouveaux checkouts PayDunya et les paiements mobiles sont désactivés.
+- Le dépôt des captures crypto, leur notification avec pièce jointe, le contrôle manuel par l’admin MFA, la protection contre le hash en doublon et le courriel client sont couverts par des tests locaux. Aucun appel RPC ou explorateur blockchain n’est configuré. L’adaptateur S3 est installé; en production, l’acceptation reste bloquée tant que le bucket privé durable n’est pas configuré et attesté.
+- L’identité administrateur autorisée est `fasodigitaltrading@gmail.com`. Sur l’instance locale vérifiée, le compte existe, est actif et son MFA est configuré. Sur une base vierge seulement, la commande d’amorçage ci-dessus crée le premier compte et refuse les doublons.
 - Le graphique TradingView est un composant navigateur externe; sa disponibilité et les droits de cotation n'ont pas été testés depuis le site en production.
 - Il n'y a pas d'intégration de calendrier économique, de FASO DIGITAL AI ou de prévisions XAUUSD. Aucune cotation BRVM n'est importée; les demandes BRVM restent non exécutables tant qu'un contrat de données et un canal autorisé pour Coris Bourse ne sont pas fournis.
 - Les commissions de 10 % sont calculées sur les paiements confirmés et les renouvellements, mais le versement des commissions aux partenaires n'est pas intégré.

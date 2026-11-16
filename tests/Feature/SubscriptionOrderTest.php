@@ -14,7 +14,6 @@ class SubscriptionOrderTest extends TestCase
 
     public function test_selecting_a_usd_pack_creates_a_server_priced_order_and_falls_back_to_summary_when_payment_is_unavailable(): void
     {
-        $this->seedBceaoRate();
         $user = $this->verifiedInvestor('buyer@example.test');
         $plan = $this->plan();
         $response = $this->actingAs($user)->post(route('subscriptions.orders.store', $plan), [
@@ -25,11 +24,11 @@ class SubscriptionOrderTest extends TestCase
         $response->assertRedirect(route('subscriptions.orders.show', $order))
             ->assertSessionHas('payment_unavailable');
         $this->assertSame('30.00', $order->amount_usd);
-        $this->assertSame(17806, $order->amount_xof);
-        $this->assertSame('593.5200', $order->fx_rate);
+        $this->assertSame(18000, $order->amount_xof);
+        $this->assertSame('600.0000', $order->fx_rate);
         $this->assertSame(now()->toDateString(), $order->fx_rate_as_of->toDateString());
         $this->assertNotNull($order->fx_rate_updated_at);
-        $this->assertSame('bceao-reference', $order->fx_provider);
+        $this->assertSame('fixed-600', $order->fx_provider);
         $this->assertSame('5.00', $order->estimated_daily_gain_usd_snapshot);
         $this->assertSame(30, $order->duration_days_snapshot);
         $this->assertSame('AWAITING_PAYMENT', $order->status);
@@ -37,9 +36,10 @@ class SubscriptionOrderTest extends TestCase
 
         $this->get(route('subscriptions.orders.show', $order))->assertOk()
             ->assertSee('30,00 USD')
-            ->assertSee('17 806 XOF')
-            ->assertSee('Cours officiel appliqué')
-            ->assertSee('Devise du transfert mobile');
+            ->assertSee('18 000 XOF')
+            ->assertSee('Taux fixe appliqué')
+            ->assertSee('Devise de paiement')
+            ->assertSee('USDT sur BNB Smart Chain (BEP20)');
     }
 
     public function test_users_cannot_view_or_refresh_another_users_order(): void
@@ -62,9 +62,8 @@ class SubscriptionOrderTest extends TestCase
         $this->post(route('subscriptions.orders.refresh', $order))->assertNotFound();
     }
 
-    public function test_refreshing_a_pending_order_applies_the_latest_bceao_reference_rate(): void
+    public function test_refreshing_a_pending_legacy_order_applies_the_fixed_rate(): void
     {
-        $this->seedBceaoRate();
         $user = $this->verifiedInvestor('buyer@example.test');
         $plan = $this->plan();
         $order = SubscriptionOrder::create([
@@ -80,8 +79,8 @@ class SubscriptionOrderTest extends TestCase
             'fx_rate' => '593.5200',
             'fx_rate_as_of' => now()->toDateString(),
             'fx_rate_updated_at' => now(),
-            'fx_provider' => 'currencyapi',
-            'fx_source_url' => 'https://currencyapi.com/docs/rate/',
+            'fx_provider' => 'bceao-reference',
+            'fx_source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
             'fx_fetched_at' => now(),
             'quote_expires_at' => now()->addMinutes(5),
         ]);
@@ -91,9 +90,9 @@ class SubscriptionOrderTest extends TestCase
             ->assertSessionHas('status');
 
         $order->refresh();
-        $this->assertSame(5935, $order->amount_xof);
-        $this->assertSame('593.5200', $order->fx_rate);
-        $this->assertSame('bceao-reference', $order->fx_provider);
+        $this->assertSame(6000, $order->amount_xof);
+        $this->assertSame('600.0000', $order->fx_rate);
+        $this->assertSame('fixed-600', $order->fx_provider);
         $this->assertTrue($order->quote_expires_at->isFuture());
     }
 
@@ -132,13 +131,4 @@ class SubscriptionOrderTest extends TestCase
         ]);
     }
 
-    private function seedBceaoRate(): void
-    {
-        cache()->put('fx.bceao.usd-xof.latest', [
-            'rate' => '593.5200',
-            'as_of' => now()->toDateString(),
-            'fetched_at' => now()->toIso8601String(),
-            'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
-        ], now()->addDay());
-    }
 }

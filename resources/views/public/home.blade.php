@@ -89,8 +89,8 @@
 
 <section class="section" id="packs">
     <div class="container">
-        <div class="section-heading-row"><div><span class="eyebrow">CATALOGUE</span><h2 class="section-title">Les formules FASO DIGITAL TRADING.</h2><p class="section-copy">USD reste la devise de référence. L’équivalence XOF est calculée au cours de référence BCEAO indiqué ci-dessous.</p>
-            @if($fxQuote)<p class="fx-rate-meta">1 USD = {{ number_format((float) $fxQuote->rate, 4, ',', ' ') }} XOF · publié le {{ $fxQuote->asOf->format('d/m/Y') }} · <a href="{{ $fxQuote->sourceUrl }}" target="_blank" rel="noopener noreferrer">Source officielle BCEAO</a></p>@else<p class="fx-rate-meta">Cours officiel BCEAO indisponible; aucune conversion XOF n’est affichée.</p>@endif
+        <div class="section-heading-row"><div><span class="eyebrow">CATALOGUE</span><h2 class="section-title">Les formules FASO DIGITAL TRADING.</h2><p class="section-copy">USD reste la devise de référence. Pour les paiements, l’équivalence XOF applique le taux fixe de 600 F CFA par dollar.</p>
+            <p class="fx-rate-meta">Taux fixe utilisé : 1 USD = 600 XOF.</p>
         </div><span class="currency-pill">TARIFS USD</span></div>
         @if($plans->isEmpty())
             <div class="plan-notice">Aucune formule n’est publiée pour le moment. Contactez l’équipe pour obtenir les informations disponibles.</div>
@@ -116,8 +116,8 @@
         @endif
         <p class="projection-disclaimer"><strong>Risque de marché :</strong> Les gains prévisionnels sont des objectifs indicatifs et ne constituent pas une garantie de rendement. Le trading comporte des risques de perte partielle ou totale du capital investi.</p>
         <div class="payment-preview"><div><span class="eyebrow">COMMANDE ET PAIEMENT</span>
-                <p>Chaque pack mène à un récapitulatif. @if($checkoutPlanIds)Un prestataire sécurisé est configuré pour les offres compatibles; l’abonnement attend la confirmation serveur de la transaction.@else Le parcours de commande est préparé, mais aucun prestataire de paiement compatible n’est configuré. Aucun débit ni accès payant ne sera activé avant une confirmation réelle.@endif</p>
-        </div><span class="payment-status">{{ $checkoutPlanIds ? 'Paiement configuré' : 'Paiements indisponibles' }}</span></div>
+                <p>Chaque pack mène à un récapitulatif. Les nouvelles commandes sont réglées uniquement en USDT BEP20.@if($manualPaymentReady) L’administrateur vérifie la transaction avant toute activation.@else Le parcours de paiement est suspendu jusqu’à la configuration sécurisée du serveur.@endif</p>
+        </div><span class="payment-status">{{ $manualPaymentReady ? 'USDT BEP20 · vérification manuelle' : 'Paiement en attente de configuration' }}</span></div>
     </div>
 </section>
 
@@ -128,7 +128,7 @@
 <section class="section" id="faq">
     <div class="container"><span class="eyebrow">QUESTIONS FRÉQUENTES</span><h2 class="section-title">Avant de commencer.</h2><div class="faq-list">
         <details><summary>Quelles données de marché sont affichées ?</summary><p>Le graphique TradingView affiche l’or et une sélection d’actions américaines; la disponibilité et le délai dépendent des flux TradingView et des places concernées. Il n’y a pas de prévisions générées par la plateforme. Les cotations BRVM ne sont pas reproduites ici; consultez le <a href="https://www.brvm.org/fr/flux-en-temps-reel" target="_blank" rel="noopener noreferrer">flux officiel de la BRVM</a>.</p></details>
-        <details><summary>Le paiement en ligne est-il actif ?</summary>@if($checkoutPlanIds)<p>Un prestataire sécurisé est configuré pour les formules compatibles; l’activation attend la confirmation serveur du paiement.@else<p>Aucun moyen de paiement compatible n’est configuré pour le moment. N’effectuez aucun transfert; aucune commande ne sera activée avant confirmation réelle.@endif</p></details>
+        <details><summary>Comment payer un abonnement ?</summary><p>Les nouvelles commandes sont réglées uniquement en USDT sur le réseau BEP20. Après le transfert, l’administrateur vérifie la transaction avant toute activation. Aucun paiement mobile ou paiement par prestataire en ligne n’est actuellement proposé.</p></details>
         <details><summary>Comment connecter mon compte MT5 ?</summary><p>La lecture de compte nécessite un accès MetaApi dédié et configuré. N’envoyez jamais votre mot de passe principal MT5 via ce site.</p></details>
         @if($plans->contains(fn($plan) => (float) $plan->capital_required > 0))<details><summary>Le capital indiqué est-il un paiement à FASO DIGITAL TRADING ?</summary><p>Non. Le capital affiché dans le catalogue est distinct du tarif de la formule. Vérifiez les conditions et risques directement auprès de votre broker.</p></details>@endif
     </div></div>

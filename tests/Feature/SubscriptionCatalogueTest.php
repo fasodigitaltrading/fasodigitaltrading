@@ -13,16 +13,15 @@ final class SubscriptionCatalogueTest extends TestCase
     use RefreshDatabase;
 
     private const EXPECTED = [
-        'starter' => ['30.00', '200.00', '5.00', 17806],
-        'standard' => ['45.00', '300.00', '7.50', 26708],
-        'pro' => ['75.00', '500.00', '12.50', 44514],
-        'premium' => ['120.00', '800.00', '20.00', 71222],
+        'starter' => ['30.00', '200.00', '5.00', 18000],
+        'standard' => ['45.00', '300.00', '7.50', 27000],
+        'pro' => ['75.00', '500.00', '12.50', 45000],
+        'premium' => ['120.00', '800.00', '20.00', 72000],
     ];
 
-    public function test_catalogue_shows_exactly_four_final_usd_packs_with_current_official_xof_equivalents(): void
+    public function test_catalogue_shows_exactly_four_final_usd_packs_with_fixed_xof_equivalents(): void
     {
         app(\Database\Seeders\DatabaseSeeder::class)->run();
-        $this->seedBceaoRate();
 
         $this->assertSame(4, SubscriptionPlan::where('status', true)->count());
         $this->get(route('subscriptions'))->assertOk()
@@ -30,16 +29,15 @@ final class SubscriptionCatalogueTest extends TestCase
             ->assertSee('200,00 USD')->assertSee('300,00 USD')->assertSee('500,00 USD')->assertSee('800,00 USD')
             ->assertSee('30,00 USD')->assertSee('45,00 USD')->assertSee('75,00 USD')->assertSee('120,00 USD')
             ->assertSee('5,00 USD')->assertSee('7,50 USD')->assertSee('12,50 USD')->assertSee('20,00 USD')
-            ->assertSee('17 806 XOF')->assertSee('26 708 XOF')->assertSee('44 514 XOF')->assertSee('71 222 XOF')
-            ->assertSee('Cours BCEAO publié le')->assertSee('30 jours')
-            ->assertSee('Choisir ce pack')->assertSee('Source officielle BCEAO')
+            ->assertSee('18 000 XOF')->assertSee('27 000 XOF')->assertSee('45 000 XOF')->assertSee('72 000 XOF')
+            ->assertSee('Taux appliqué : 1 USD = 600 XOF')->assertSee('30 jours')
+            ->assertSee('Choisir ce pack')->assertDontSee('BCEAO')
             ->assertSee('Les gains prévisionnels sont des objectifs indicatifs et ne constituent pas une garantie de rendement. Le trading comporte des risques de perte partielle ou totale du capital investi.');
     }
 
     public function test_each_pack_leads_to_a_server_priced_order_summary_without_simulating_payment(): void
     {
         app(\Database\Seeders\DatabaseSeeder::class)->run();
-        $this->seedBceaoRate();
         $user = User::create([
             'first_name' => 'Test', 'last_name' => 'Investor', 'email' => 'catalog-buyer@example.test',
             'password' => 'a sufficiently long password', 'role' => 'INVESTOR', 'status' => 'ACTIVE',
@@ -61,9 +59,17 @@ final class SubscriptionCatalogueTest extends TestCase
             $this->assertSame(30, $order->duration_days_snapshot);
             $this->assertSame('AWAITING_PAYMENT', $order->status);
             $this->get(route('subscriptions.orders.show', $order))->assertOk()
-                ->assertSee('PayDunya n’est pas disponible pour cette commande')
-                ->assertSee('l’abonnement restera inactif jusqu’à vérification réelle des fonds')
-                ->assertSee('Générer mon code OTP de transaction');
+                ->assertSee('Seul le paiement en USDT BEP20 est accepté')
+                ->assertSee('0xF9C6Bb6b72091Ddc8F5DcCc2D90EBc73870D042D')
+                ->assertSee('la vérification de la transaction par l’administrateur')
+                ->assertSee('ÉTAPE 2 · JUSTIFICATIF DU TRANSFERT')
+                ->assertSee('J’ai payé · envoyer la capture')
+                ->assertSee(number_format((float) $price, 2, ',', ' ').' USDT')
+                ->assertSee('0x55d398326f99059ff775485246999027b3197955')
+                ->assertDontSee('manual_payment_otp')
+                ->assertDontSee('transaction_reference')
+                ->assertDontSee('Orange Money')
+                ->assertDontSee('Payer en ligne · paydunya');
         }
 
         $this->assertDatabaseCount('subscription_orders', 4);
@@ -92,13 +98,4 @@ final class SubscriptionCatalogueTest extends TestCase
         $this->assertDatabaseCount('subscription_orders', 0);
     }
 
-    private function seedBceaoRate(): void
-    {
-        cache()->put('fx.bceao.usd-xof.latest', [
-            'rate' => '593.5200',
-            'as_of' => now()->toDateString(),
-            'fetched_at' => now()->toIso8601String(),
-            'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
-        ], now()->addDay());
-    }
 }

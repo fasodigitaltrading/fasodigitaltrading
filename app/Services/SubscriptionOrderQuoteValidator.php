@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\SubscriptionOrder;
 use App\Services\Fx\BceaoReferenceRate;
+use App\Services\Fx\ExchangeRateQuote;
 use Carbon\CarbonImmutable;
 
 final class SubscriptionOrderQuoteValidator
@@ -19,7 +20,7 @@ final class SubscriptionOrderQuoteValidator
             if ((string) $order->fx_rate !== '600.0000') {
                 return false;
             }
-            $rate = new BceaoReferenceRate('600.0000', CarbonImmutable::now(), CarbonImmutable::now(), '');
+            $rate = new ExchangeRateQuote('600.0000', CarbonImmutable::now(), CarbonImmutable::now(), '', 'fixed-600');
         } elseif ($order->fx_provider === 'bceao-reference') {
             $rateValue = (string) $order->fx_rate;
             $source = parse_url((string) $order->fx_source_url);
@@ -51,9 +52,9 @@ final class SubscriptionOrderQuoteValidator
             return false;
         }
 
-        return $order->fx_provider === 'fixed-600'
-            || ($order->fx_provider === 'bceao-reference'
-                && $order->fx_rate_as_of?->greaterThanOrEqualTo(now()->startOfDay()->subDays(3)));
+        // Historical BCEAO orders remain auditable, but only new fixed-rate
+        // quotes may start a payment. Pending legacy orders must be refreshed.
+        return $order->fx_provider === 'fixed-600';
     }
 
     private function validUsdAmount(string $amount): bool

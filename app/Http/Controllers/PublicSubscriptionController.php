@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\SubscriptionPlan;
+use App\Services\ManualPaymentReadiness;
 use App\Services\SubscriptionCatalogAvailability;
 use Illuminate\View\View;
 
 class PublicSubscriptionController extends Controller
 {
-    public function index(SubscriptionCatalogAvailability $availability): View
+    public function index(SubscriptionCatalogAvailability $availability, ManualPaymentReadiness $manualPayments): View
     {
         $plans = SubscriptionPlan::where('status', true)
             ->whereIn('slug', SubscriptionPlan::PUBLIC_CATALOGUE_SLUGS)
@@ -19,6 +20,7 @@ class PublicSubscriptionController extends Controller
         return view('public.subscriptions', [
             'plans' => $plans,
             ...$availability->forPlans($plans),
+            'manualPaymentReady' => $manualPayments->isReady(),
         ]);
     }
 }

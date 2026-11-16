@@ -23,6 +23,7 @@ return [
 
         // Attach a private Laravel Cloud object-storage bucket named "s3".
         // Cloud injects AWS_BUCKET, AWS_REGION, AWS_ENDPOINT_URL and credentials.
+        // Bucket-level privacy is enforced by Laravel Object Storage; do not send per-object ACLs.
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

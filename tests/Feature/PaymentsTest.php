@@ -31,7 +31,7 @@ class PaymentsTest extends TestCase
         $this->assertTrue(Schema::hasColumns('payment_webhook_events', ['provider', 'event_id', 'payload_hash', 'processing_status']));
     }
 
-    public function test_checkout_button_stays_hidden_when_a_current_bceao_quote_is_missing(): void
+    public function test_catalogue_uses_the_fixed_rate_without_an_external_fx_quote(): void
     {
         config([
             'payments.default_provider' => 'paydunya',
@@ -51,16 +51,14 @@ class PaymentsTest extends TestCase
         $user = $this->makeUser();
         $user->forceFill(['email_verified_at' => now()])->save();
         $plan = $this->makePlan();
-        $plan->update(['currency' => 'XOF', 'price' => '5000.00']);
 
+        Http::preventStrayRequests();
         $this->actingAs($user)->get(route('subscriptions'))->assertOk()
-            ->assertDontSee('Payer en ligne · paydunya')
-            ->assertSee('cours de référence publié par la BCEAO')
-            ->assertSee('Le cours BCEAO n’est pas disponible pour le moment');
-
-        $plan->update(['currency' => 'USD']);
-        $this->actingAs($user)->get(route('subscriptions'))->assertOk()
-            ->assertDontSee('Payer en ligne · paydunya');
+            ->assertSee('1 USD = 600 XOF')
+            ->assertSee('Taux fixe appliqué aux commandes')
+            ->assertDontSee('BCEAO');
+        $this->get(route('fx.usd-xof'))->assertOk()
+            ->assertJson(['available' => true, 'usable' => true, 'rate' => '600.0000', 'provider' => 'fixed-600', 'stale' => false]);
 
         $this->assertDatabaseCount('payments', 0);
     }
@@ -321,24 +319,17 @@ class PaymentsTest extends TestCase
     public function test_public_catalogue_contains_no_synthetic_forecast_or_demo_payment_claim(): void
     {
         app(\Database\Seeders\DatabaseSeeder::class)->run();
-        cache()->put('fx.bceao.usd-xof.latest', [
-            'rate' => '593.5200',
-            'as_of' => now()->toDateString(),
-            'fetched_at' => now()->toIso8601String(),
-            'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
-        ], now()->addDay());
-
         $this->get(route('home'))->assertOk()
             ->assertSee('FASO DIGITAL TRADING')
             ->assertSee('USD reste la devise de référence')
-            ->assertSee('cours de référence BCEAO')
+            ->assertSee('taux fixe de 600 F CFA par dollar')
             ->assertSee('Quelles données de marché sont affichées ?')
             ->assertSee('Les cotations BRVM ne sont pas reproduites ici')
             ->assertSee('Gain journalier prévisionnel')
-            ->assertSee('≈ 17 806 XOF')
+            ->assertSee('18 000 XOF')
             ->assertSee('Choisir ce pack')
             ->assertSee('Les gains prévisionnels sont des objectifs indicatifs')
-            ->assertDontSee('Taux fixe de 600 XOF');
+            ->assertDontSee('BCEAO');
 
         $this->get(route('subscriptions'))->assertOk()
             ->assertSee('FASO DIGITAL TRADING')
@@ -346,7 +337,7 @@ class PaymentsTest extends TestCase
             ->assertSee('30,00 USD')
             ->assertSee('200,00 USD')
             ->assertSee('5,00 USD')
-            ->assertSee('Aucun prestataire de paiement compatible n’est configuré')
+            ->assertSee('montant en USDT BEP20 et l’adresse de réception')
             ->assertSee('STANDARD')
             ->assertSee('PRO')
             ->assertSee('PREMIUM')

@@ -1,31 +1,23 @@
 <?php
 
 use App\Models\User;
-use App\Services\Fx\BceaoReferenceRateService;
+use App\Services\Fx\FixedUsdXofRateService;
 use Illuminate\Support\Facades\Artisan;
 
 Artisan::command('blackwolf:health', function () {
     $this->info('FASO DIGITAL TRADING application is available.');
 })->purpose('Check that the application boots.');
 
-Artisan::command('blackwolf:refresh-fx', function (BceaoReferenceRateService $rates) {
+Artisan::command('blackwolf:refresh-fx', function (FixedUsdXofRateService $rates) {
     $quote = $rates->refresh();
-    if (!$quote) {
-        $this->error('Aucune référence USD/XOF BCEAO valide n’est disponible. Aucun nouveau paiement ne doit utiliser un taux de remplacement.');
+    if (!$quote->canBeUsedForCheckout() || $quote->amountXof('1.00') !== 600) {
+        $this->error('Le taux fixe USD/XOF est invalide; les paiements sont bloqués.');
         return 1;
     }
 
-    $this->line('USD/XOF BCEAO : '.$quote->rate.' publié le '.$quote->asOf->format('d/m/Y').'.');
-    $this->line('Source : '.$quote->sourceUrl);
-    $this->line('Récupération : '.$quote->fetchedAt->format('d/m/Y H:i:s').' UTC.');
-    if (!$quote->canBeUsedForCheckout()) {
-        $this->warn('Référence périmée ou cache marqué comme ancien : elle n’est pas utilisable pour un nouveau paiement.');
-        return 1;
-    }
-
-    $this->info('Référence admissible pour un nouveau récapitulatif de paiement.');
+    $this->info('Taux fixe de paiement : 1 USD = 600 XOF. Aucune source de change externe n’est consultée.');
     return 0;
-})->purpose('Actualiser et vérifier le cours de référence quotidien BCEAO USD/XOF.');
+})->purpose('Vérifier le taux fixe USD/XOF utilisé par les nouvelles commandes.');
 
 Artisan::command('blackwolf:create-admin', function () {
     $email = (string) config('admin.email');

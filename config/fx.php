@@ -1,9 +1,8 @@
 <?php
 
 return [
-    'provider' => 'bceao-reference',
-    // Retained for legacy manual-transfer orders; the public catalogue uses
-    // the official BCEAO reference-rate service and never this fixed value.
+    'provider' => 'fixed-600',
+    // Agreed billing rate for all new subscription orders. Do not fetch an FX API.
     'fixed_usd_xof' => '600.0000',
     'refresh_seconds' => (int) env('FX_RATE_REFRESH_SECONDS', 60),
     'max_rate_age_seconds' => (int) env('FX_RATE_MAX_AGE_SECONDS', 180),

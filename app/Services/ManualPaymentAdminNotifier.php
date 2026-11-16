@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Mail\ManualPaymentReceivedAlert;
 use App\Models\ManualPaymentSubmission;
 use App\Support\EmailDeliveryReadiness;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -13,11 +12,16 @@ use Throwable;
 
 final class ManualPaymentAdminNotifier
 {
-    public function send(ManualPaymentSubmission $submission, EmailDeliveryReadiness $readiness, bool $allowResend = false): bool
+    public function send(
+        ManualPaymentSubmission $submission,
+        EmailDeliveryReadiness $readiness,
+        ManualPaymentProofStorage $proofs,
+        bool $allowResend = false,
+    ): bool
     {
         $submission = ManualPaymentSubmission::with(['user', 'order', 'otp'])->findOrFail($submission->id);
         $codeCiphertext = $submission->otp?->code_ciphertext;
-        if (!$codeCiphertext || $submission->status !== 'PENDING'
+        if ($submission->status !== 'PENDING'
             || ($submission->admin_email_status === 'SENT' && !$allowResend)) {
             return false;
         }
@@ -39,7 +43,7 @@ final class ManualPaymentAdminNotifier
             if ($locked->status !== 'PENDING'
                 || ($locked->admin_email_status === 'SENT' && !$allowResend)
                 || ($locked->admin_email_status === 'SENDING' && !$staleSending)
-                || !$locked->otp()->whereNotNull('code_ciphertext')->exists()) {
+                ) {
                 return false;
             }
 
@@ -56,8 +60,12 @@ final class ManualPaymentAdminNotifier
         }
 
         try {
-            $code = Crypt::decryptString($codeCiphertext);
-            Mail::to((string) config('admin.email'))->send(new ManualPaymentReceivedAlert($submission, $code));
+            if (!$proofs->matchesHash((string) $submission->proof_path, (string) $submission->proof_sha256)) {
+                throw new \RuntimeException('The stored payment proof is missing or has changed.');
+            }
+            $proofContents = $proofs->contents((string) $submission->proof_path);
+            $code = $codeCiphertext ? \Illuminate\Support\Facades\Crypt::decryptString($codeCiphertext) : null;
+            Mail::to((string) config('admin.email'))->send(new ManualPaymentReceivedAlert($submission, $code, $proofContents));
 
             DB::transaction(function () use ($submission): void {
                 $locked = ManualPaymentSubmission::whereKey($submission->id)->lockForUpdate()->firstOrFail();

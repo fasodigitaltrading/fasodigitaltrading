@@ -17,7 +17,6 @@ final class SelectedPackageRegistrationTest extends TestCase
     public function test_registration_keeps_selected_package_and_opens_its_order_after_email_verification(): void
     {
         Mail::fake();
-        $this->seedBceaoRate();
         $plan = SubscriptionPlan::create([
             'name' => 'STANDARD',
             'slug' => 'standard',
@@ -53,9 +52,9 @@ final class SelectedPackageRegistrationTest extends TestCase
         $this->assertSame($user->id, $order->user_id);
         $this->assertSame($plan->id, $order->subscription_plan_id);
         $this->assertSame('45.00', $order->amount_usd);
-        $this->assertSame(26708, $order->amount_xof);
-        $this->assertSame('bceao-reference', $order->fx_provider);
-        $this->assertSame('593.5200', $order->fx_rate);
+        $this->assertSame(27000, $order->amount_xof);
+        $this->assertSame('fixed-600', $order->fx_provider);
+        $this->assertSame('600.0000', $order->fx_rate);
         $this->assertSame('AWAITING_PAYMENT', $order->status);
         $this->assertDatabaseCount('payments', 0);
 
@@ -74,7 +73,6 @@ final class SelectedPackageRegistrationTest extends TestCase
 
     public function test_an_existing_unverified_investor_can_prepare_a_selected_package_before_confirming_email(): void
     {
-        $this->seedBceaoRate();
         $plan = SubscriptionPlan::create([
             'name' => 'PRO',
             'slug' => 'pro',
@@ -103,7 +101,7 @@ final class SelectedPackageRegistrationTest extends TestCase
             ->assertSessionHas('checkout.order_id');
 
         $order = SubscriptionOrder::sole();
-        $this->assertSame(44514, $order->amount_xof);
+        $this->assertSame(45000, $order->amount_xof);
         $this->assertDatabaseCount('payments', 0);
 
         $verificationUrl = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
@@ -115,13 +113,4 @@ final class SelectedPackageRegistrationTest extends TestCase
         $this->assertNotNull($user->fresh()->email_verified_at);
     }
 
-    private function seedBceaoRate(): void
-    {
-        cache()->put('fx.bceao.usd-xof.latest', [
-            'rate' => '593.5200',
-            'as_of' => now()->toDateString(),
-            'fetched_at' => now()->toIso8601String(),
-            'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
-        ], now()->addDay());
-    }
 }

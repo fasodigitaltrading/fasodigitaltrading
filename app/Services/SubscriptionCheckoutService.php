@@ -58,7 +58,7 @@ class SubscriptionCheckoutService
                 $lockedOrder = SubscriptionOrder::whereKey($order->id)->lockForUpdate()->firstOrFail();
                 if (!in_array($lockedOrder->status, ['AWAITING_PAYMENT', 'PAYMENT_FAILED'], true)
                     || !($quoteValidator ?? app(SubscriptionOrderQuoteValidator::class))->canPayNow($lockedOrder)) {
-                    abort(409, 'Cette commande n’est plus payable avec le taux BCEAO enregistré.');
+                    abort(409, 'Cette commande doit être actualisée avec le taux fixe de 600 XOF par USD avant paiement.');
                 }
                 $order = $lockedOrder;
                 $paymentAmount = (string) $lockedOrder->amount_xof;

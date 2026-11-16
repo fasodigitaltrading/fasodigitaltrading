@@ -14,7 +14,7 @@ use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\TradingAccount;
 use App\Models\User;
-use App\Services\Fx\BceaoReferenceRateService;
+use App\Services\Fx\FixedUsdXofRateService;
 use App\Services\Mt5ConnectorService;
 use App\Services\ManualPaymentReadiness;
 use App\Services\Payments\PayDunyaProvider;
@@ -27,7 +27,7 @@ final class DashboardController extends Controller
     public function index(
         SubscriptionCatalogAvailability $availability,
         EmailDeliveryReadiness $emailReadiness,
-        BceaoReferenceRateService $fxRates,
+        FixedUsdXofRateService $fxRates,
         Mt5ConnectorService $mt5Connector,
         ManualPaymentReadiness $manualPaymentReadiness,
     ) {
@@ -36,18 +36,17 @@ final class DashboardController extends Controller
         $checkoutReadiness = $availability->forPlans($plans);
         $payDunyaIssues = app(PayDunyaProvider::class)->readinessIssues();
         $providerStatus = $checkoutReadiness['providerName'] === ''
-            ? 'aucun prestataire de paiement en ligne sélectionné'
+            ? 'aucun prestataire de paiement en ligne activé; nouvelles commandes en USDT BEP20 uniquement'
             : ($checkoutReadiness['providerName'] === 'paydunya' && $payDunyaIssues !== []
                 ? 'bloqué — '.implode(' ; ', $payDunyaIssues)
                 : ($checkoutReadiness['checkoutPlanIds'] !== []
-                    ? 'checkout PayDunya live prêt pour '.count($checkoutReadiness['checkoutPlanIds']).' offre(s)'.(!(bool) config('payments.paydunya.live_verified') ? ' ; premier test de bout en bout non attesté' : '').'; aucune formule ne s’active sans confirmation API du paiement'
-                    : 'aucune offre payable : vérifiez le cours BCEAO actuel et les tarifs publiés'));
+                    ? 'prestataire en ligne configuré pour '.count($checkoutReadiness['checkoutPlanIds']).' offre(s); aucun paiement crypto ne s’active sans vérification admin'
+                    : 'aucune offre payable : vérifiez le taux fixe USD/XOF et les tarifs publiés'));
 
         $fx = $fxRates->latest();
-        $fxStatus = $fx
-            ? 'référence BCEAO '.$fx->rate.' XOF/USD publiée le '.$fx->asOf->format('d/m/Y')
-                .(!$fx->canBeUsedForCheckout() ? ' · trop ancienne ou en cache périmé, non utilisable pour un nouveau paiement' : ' · récupérée le '.$fx->fetchedAt->format('d/m/Y H:i'))
-            : 'indisponible — aucune cotation officielle en cache; les nouveaux paiements sont bloqués';
+        $fxStatus = $fx && $fx->canBeUsedForCheckout()
+            ? 'taux fixe appliqué : 1 USD = '.$fx->rate.' XOF'
+            : 'configuration du taux fixe USD/XOF invalide; les nouveaux paiements sont bloqués';
         $mailStatus = $emailReadiness->status();
         $mt5Status = $mt5Connector->isConfigured()
             ? 'endpoint MetaApi configuré; aucun test de connexion MT5 par compte n’a été lancé depuis le tableau de bord'
@@ -78,10 +77,10 @@ final class DashboardController extends Controller
                 ->groupBy('currency', 'status')->orderBy('currency')->orderBy('status')->get(),
             'paymentProviderStatus' => $providerStatus,
             'manualPaymentApprovalStatus' => $manualPaymentReadiness->isReady()
-                ? 'file de contrôle disponible; la confirmation exige une preuve et une vérification réelle par l’administrateur'
-                : 'confirmation bloquée jusqu’à la validation de la configuration sécurisée et des mentions légales',
+                ? 'USDT BEP20 uniquement; la preuve et la transaction doivent être vérifiées sur la blockchain par l’administrateur avant activation'
+                : 'USDT BEP20 uniquement; confirmation bloquée jusqu’à la configuration sécurisée et aux mentions légales requises',
             'fxRateStatus' => $fxStatus,
-            'refundWorkflowStatus' => 'rapprochement PayDunya non connecté; les remboursements ne sont pas déclenchés depuis cette application',
+            'refundWorkflowStatus' => 'aucun remboursement crypto automatisé; les retours éventuels sont traités manuellement après vérification',
             'mailServiceStatus' => $mailStatus,
             'mt5ConnectorStatus' => $mt5Status,
             'brvmDataStatus' => 'en attente — contrat de diffusion et accès officiel absents; aucun cours n’est importé',

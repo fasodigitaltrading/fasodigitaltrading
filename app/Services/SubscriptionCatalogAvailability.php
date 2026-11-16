@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\SubscriptionPlan;
 use App\Exceptions\PaymentProviderUnavailable;
-use App\Services\Fx\BceaoReferenceRateService;
+use App\Services\Fx\FixedUsdXofRateService;
 use Illuminate\Database\Eloquent\Collection;
 
 class SubscriptionCatalogAvailability
@@ -12,7 +12,7 @@ class SubscriptionCatalogAvailability
     public function forPlans(Collection $plans): array
     {
         $providerName = trim((string) config('payments.default_provider'));
-        $fxQuote = app(BceaoReferenceRateService::class)->latest();
+        $fxQuote = app(FixedUsdXofRateService::class)->latest();
         $provider = null;
 
         if ($fxQuote?->canBeUsedForCheckout() && $providerName !== '') {

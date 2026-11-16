@@ -13,6 +13,8 @@ class ManualPaymentSubmission extends Model
         'status', 'review_note', 'reviewed_by', 'reviewed_at', 'customer_acknowledged_at', 'customer_terms_version',
         'manual_payment_otp_id', 'declared_amount', 'transaction_occurred_at', 'admin_email_status',
         'admin_email_sent_at', 'admin_email_last_attempt_at',
+        'verified_transaction_hash', 'verified_token_contract', 'verified_recipient', 'verified_confirmations',
+        'customer_email_status', 'customer_email_sent_at', 'customer_email_last_attempt_at',
     ];
 
     protected function casts(): array
@@ -25,6 +27,9 @@ class ManualPaymentSubmission extends Model
             'transaction_occurred_at' => 'immutable_datetime',
             'admin_email_sent_at' => 'immutable_datetime',
             'admin_email_last_attempt_at' => 'immutable_datetime',
+            'customer_email_sent_at' => 'immutable_datetime',
+            'customer_email_last_attempt_at' => 'immutable_datetime',
+            'verified_confirmations' => 'integer',
         ];
     }
 

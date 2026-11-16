@@ -5,13 +5,13 @@ namespace App\Services;
 use App\Models\SubscriptionOrder;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
-use App\Services\Fx\BceaoReferenceRateService;
+use App\Services\Fx\FixedUsdXofRateService;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final class SubscriptionOrderCreator
 {
-    public function __construct(private readonly BceaoReferenceRateService $rates)
+    public function __construct(private readonly FixedUsdXofRateService $rates)
     {
     }
 
@@ -48,9 +48,9 @@ final class SubscriptionOrderCreator
             'amount_xof' => $amountXof,
             'fx_rate' => $quote?->rate,
             'fx_rate_as_of' => $quote?->asOf->toDateString(),
-            'fx_rate_updated_at' => $quote?->asOf,
-            'fx_provider' => $quote ? 'bceao-reference' : null,
-            'fx_source_url' => $quote?->sourceUrl,
+            'fx_rate_updated_at' => $quote?->updatedAt,
+            'fx_provider' => $quote?->provider,
+            'fx_source_url' => $quote?->sourceUrl !== '' ? $quote?->sourceUrl : null,
             'fx_fetched_at' => $quote?->fetchedAt,
             'quote_expires_at' => $quoteUsable
                 ? now()->addMinutes(max(1, (int) config('fx.quote_valid_minutes', 30)))

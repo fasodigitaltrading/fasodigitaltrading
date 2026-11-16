@@ -1,8 +1,8 @@
 @extends('layouts.app')
 
 @section('content')
-<section class="page-hero"><div class="container"><span class="eyebrow">FASO DIGITAL TRADING · OFFRES</span><h1>Choisissez votre formule</h1><p>Les prix sont définis en USD. Leur équivalence en FCFA est calculée avec le dernier cours de référence publié par la BCEAO.</p>
-    @if($fxQuote)<p class="fx-rate-meta">Cours USD/XOF : 1 USD = {{ number_format((float) $fxQuote->rate, 4, ',', ' ') }} XOF · publié le {{ $fxQuote->asOf->format('d/m/Y') }} · <a href="{{ $fxQuote->sourceUrl }}" target="_blank" rel="noopener noreferrer">Source officielle BCEAO</a></p>@else<p class="fx-rate-meta">Le cours BCEAO n’est pas disponible pour le moment; aucune équivalence XOF ne sera inventée.</p>@endif
+<section class="page-hero"><div class="container"><span class="eyebrow">FASO DIGITAL TRADING · OFFRES</span><h1>Choisissez votre formule</h1><p>Les prix de référence sont en USD. L’équivalence XOF affichée suit le taux fixe de 1 USD = 600 XOF; le paiement s’effectue en USDT BEP20.</p>
+    <p class="fx-rate-meta">Taux fixe appliqué aux commandes : 1 USD = 600 XOF.</p>
 </div></section>
 <section class="container" style="padding-bottom:80px">
     @if($errors->has('payment'))<div class="form-alert" role="alert">{{ $errors->first('payment') }}</div>@endif
@@ -36,7 +36,7 @@
     @endif
     <p class="projection-disclaimer"><strong>Risque de marché :</strong> Les gains prévisionnels sont des objectifs indicatifs et ne constituent pas une garantie de rendement. Le trading comporte des risques de perte partielle ou totale du capital investi.</p>
     <div class="payment-preview"><div><span class="eyebrow">PAIEMENT</span>
-        <p>Après le choix du pack, le récapitulatif présente les moyens de paiement réellement configurés. @if($checkoutPlanIds)Un prestataire sécurisé est disponible pour les offres compatibles; l’abonnement ne s’active qu’après confirmation serveur de la transaction.@else Aucun prestataire de paiement compatible n’est configuré. Le parcours de commande reste disponible, mais aucun paiement ni accès payant ne sera activé avant une confirmation réelle.@endif</p>
+        <p>Après le choix du pack, le récapitulatif affiche le montant en USDT BEP20 et l’adresse de réception. @if($manualPaymentReady)L’administrateur vérifie la transaction avant toute activation.@else Le parcours de paiement est suspendu jusqu’à la configuration sécurisée du serveur.@endif</p>
     </div><a class="text-link" href="{{ route('home') }}#contact">Contacter l’équipe <span aria-hidden="true">→</span></a></div>
 </section>
 @endsection

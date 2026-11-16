@@ -13,7 +13,6 @@ use App\Http\Controllers\Admin\SmtpTestController;
 use App\Http\Controllers\PublicSubscriptionController;
 use App\Http\Controllers\PublicFxRateController;
 use App\Http\Controllers\ManualPaymentSubmissionController;
-use App\Http\Controllers\ManualPaymentOtpController;
 use App\Http\Controllers\Admin\ManualPaymentController as AdminManualPaymentController;
 use App\Http\Controllers\Admin\BrokerController;
 use App\Http\Controllers\Investor\TradingAccountController;
@@ -40,7 +39,8 @@ use App\Models\Broker;
 use App\Models\SubscriptionPlan;
 use App\Models\SiteSetting;
 use App\Services\SubscriptionCatalogAvailability;
-Route::get('/', function (SubscriptionCatalogAvailability $availability) {
+use App\Services\ManualPaymentReadiness;
+Route::get('/', function (SubscriptionCatalogAvailability $availability, ManualPaymentReadiness $manualPayments) {
  $plans = SubscriptionPlan::where('status', true)->whereIn('slug', SubscriptionPlan::PUBLIC_CATALOGUE_SLUGS)
   ->orderBy('sort_order')->get()->filter(fn (SubscriptionPlan $plan) => $plan->matchesApprovedPublicTerms())->values();
  return view('public.home', [
@@ -48,6 +48,7 @@ Route::get('/', function (SubscriptionCatalogAvailability $availability) {
  'description' => SiteSetting::read('home_description', 'Consultez les formules, échangez avec notre équipe et retrouvez vos informations dans un espace personnel.'),
  'plans' => $plans,
  ...$availability->forPlans($plans),
+ 'manualPaymentReady' => $manualPayments->isReady(),
  'selectedPackage' => request()->query('pack'),
  ]);
 })->name('home');
@@ -93,7 +94,6 @@ Route::middleware(['auth','active','password.current','verified'])->group(functi
   Route::get('/subscriptions/orders/{order}',[SubscriptionOrderController::class,'show'])->name('subscriptions.orders.show');
   Route::post('/subscriptions/orders/{order}/refresh-quote',[SubscriptionOrderController::class,'refreshQuote'])->middleware('throttle:5,1')->name('subscriptions.orders.refresh');
   Route::post('/subscriptions/orders/{order}/manual-payment',[ManualPaymentSubmissionController::class,'store'])->middleware('throttle:5,1')->name('subscriptions.orders.manual-payment');
-  Route::post('/subscriptions/orders/{order}/manual-payment/otp',[ManualPaymentOtpController::class,'store'])->middleware('throttle:3,1')->name('subscriptions.orders.manual-payment.otp');
   Route::post('/subscriptions/orders/{order}/checkout',[SubscriptionOrderController::class,'checkout'])->middleware('throttle:5,1')->name('subscriptions.orders.checkout');
  });
  Route::post('/subscriptions/{plan}/checkout',[SubscriptionCheckoutController::class,'__invoke'])->middleware('throttle:5,1')->name('subscriptions.checkout');
@@ -134,8 +134,10 @@ Route::middleware(['auth','active','password.current','verified'])->group(functi
   Route::get('/manual-payments',[AdminManualPaymentController::class,'index'])->name('manual-payments.index');
   Route::get('/manual-payments/{submission}/proof',[AdminManualPaymentController::class,'proof'])->name('manual-payments.proof');
   Route::post('/manual-payments/{submission}/approve',[AdminManualPaymentController::class,'approve'])->middleware('throttle:10,1')->name('manual-payments.approve');
+  Route::post('/manual-payments/{submission}/request-info',[AdminManualPaymentController::class,'requestMoreInfo'])->middleware('throttle:10,1')->name('manual-payments.request-info');
   Route::post('/manual-payments/{submission}/reject',[AdminManualPaymentController::class,'reject'])->middleware('throttle:10,1')->name('manual-payments.reject');
   Route::post('/manual-payments/{submission}/notify',[AdminManualPaymentController::class,'notify'])->middleware('throttle:1,5')->name('manual-payments.notify');
+  Route::post('/manual-payments/{submission}/notify-customer',[AdminManualPaymentController::class,'notifyCustomer'])->middleware('throttle:1,5')->name('manual-payments.notify-customer');
   Route::get('/commissions',[CommissionController::class,'index'])->name('commissions.index');
   Route::post('/commissions/{commission}/control',[CommissionController::class,'control'])->name('commissions.control');
   Route::get('/settings',[SiteSettingsController::class,'index'])->name('settings.index');

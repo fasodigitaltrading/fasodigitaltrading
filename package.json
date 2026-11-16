@@ -1,1 +1,14 @@
-{"private":true,"scripts":{"dev":"vite","build":"vite build"},"devDependencies":{"vite":"^7.0.0"}}
+{
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "vite --configLoader runner",
+    "build": "vite build --configLoader runner"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

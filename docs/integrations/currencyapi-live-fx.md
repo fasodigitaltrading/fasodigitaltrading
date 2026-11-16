@@ -1,23 +1,9 @@
-# Taux de référence USD/XOF de la BCEAO
+# Conversion fixe USD/XOF
 
-## Source et fonctionnement
+Les tarifs de catalogue restent en USD. L’équivalence XOF affichée pour les nouvelles commandes applique le taux fixe convenu : **1 USD = 600 XOF**. Les nouveaux paiements sont uniquement en USDT BEP20, pour le même montant numérique que le prix USD. Aucun cours BCEAO, CurrencyAPI ou autre taux externe n’est consulté.
 
-Le dollar reste la devise de référence des offres. Le serveur lit le cours quotidien publié par la BCEAO sur la page officielle configurée par `FX_BCEAO_REFERENCE_URL`. Aucune clé CurrencyAPI n’est requise; l’ancien adaptateur CurrencyAPI n’est pas utilisé.
+Le serveur calcule le montant en XOF à partir du tarif USD approuvé, enregistre le taux `600.0000`, le fournisseur `fixed-600` et le montant arrondi à l’unité dans l’instantané de commande. Le navigateur ne peut pas imposer un montant ou un taux.
 
-Le parseur n’accepte que le domaine HTTPS `www.bceao.int`, extrait le taux de la ligne Dollar US et conserve le taux, la date de publication, la source et l’heure de récupération. La mise en cache réduit les requêtes; un cache périmé peut être affiché comme historique, mais il ne permet pas de créer un paiement.
+Les commandes historiques conservent leur taux, source et montant enregistrés. Une ancienne commande non payée au taux BCEAO doit être actualisée avant paiement; une commande déjà payée et son historique ne sont pas réécrits.
 
-Une commande conserve son taux et son montant XOF dans un instantané immuable. Les nouveaux paiements exigent une référence BCEAO récente et un récapitulatif non expiré. Le code refuse un taux absent ou invalide; il ne remplace jamais le cours par 600 XOF ou une conversion inventée.
-
-La référence est quotidienne, pas une cotation intrajournalière universelle. Le montant XOF est arrondi à l’unité selon l’algorithme du service et verrouillé pour la durée du récapitulatif configurée (`FX_QUOTE_VALID_MINUTES`).
-
-## Rafraîchir et contrôler
-
-```powershell
-php artisan blackwolf:refresh-fx
-```
-
-La commande contacte la source BCEAO en environnement réel, affiche la valeur, sa date, l’URL source et l’heure de récupération, puis renvoie un code d’erreur si aucune référence assez récente n’est disponible. En tests, la commande n’effectue aucune requête réseau implicite.
-
-## Commandes et paiements manuels
-
-Les paiements PayDunya et les transferts manuels utilisent le montant XOF enregistré sur la commande. Les soumissions manuelles contrôlent que le taux, la source officielle et le calcul correspondent à cet instantané; l’administrateur valide ensuite la réception réelle des fonds. Les anciennes commandes déjà enregistrées à `fixed-600` restent traitées comme des documents historiques et ne modifient pas le catalogue courant.
+La durée du récapitulatif est définie par `FX_QUOTE_VALID_MINUTES`. `php artisan blackwolf:refresh-fx` vérifie le taux fixe localement et n’effectue aucune requête réseau.

@@ -8,5 +8,9 @@ return [
     'locale' => env('APP_LOCALE', 'fr'),
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'fr'),
     'key' => env('APP_KEY'),
+    'previous_keys' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('APP_PREVIOUS_KEYS', ''))
+    ))),
     'cipher' => 'AES-256-CBC',
 ];

@@ -46,7 +46,7 @@ class BceaoReferenceRateTest extends TestCase
         Http::preventStrayRequests();
         cache()->put('fx.bceao.usd-xof.latest', [
             'rate' => '593.5200',
-            'as_of' => '2026-11-13',
+            'as_of' => now()->toDateString(),
             'fetched_at' => now()->toIso8601String(),
             'source_url' => 'https://www.bceao.int/fr/cours/cours-de-reference-des-principales-devises-contre-Franc-CFA',
         ], now()->addDay());

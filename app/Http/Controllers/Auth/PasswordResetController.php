@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\EmailDeliveryReadiness;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,14 +16,22 @@ use Throwable;
 
 class PasswordResetController extends Controller
 {
-    public function requestForm(): View
+    public function requestForm(EmailDeliveryReadiness $readiness): View
     {
-        return view('auth.password-email');
+        return view('auth.password-email', [
+            'emailTransportAvailable' => $readiness->canAttemptTest(),
+        ]);
     }
 
-    public function sendResetLink(Request $request): RedirectResponse
+    public function sendResetLink(Request $request, EmailDeliveryReadiness $readiness): RedirectResponse
     {
         $data = $request->validate(['email' => ['required', 'email', 'max:255']]);
+
+        if (!$readiness->canAttemptTest()) {
+            Log::notice('Password reset blocked because SMTP configuration is incomplete.');
+
+            return back()->with('email_service_unavailable', true);
+        }
 
         try {
             Password::sendResetLink($data);

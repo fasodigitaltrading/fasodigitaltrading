@@ -11,11 +11,13 @@
     <div class="form-card">
         <h2>Mot de passe oublié ?</h2>
         <p>Le message ne révèle pas si cette adresse possède un compte.</p>
+        @unless($emailTransportAvailable || session('email_service_unavailable'))<div class="form-alert" role="status">La réinitialisation par e-mail est temporairement indisponible : le serveur d’envoi n’est pas configuré. Aucun lien n’a été envoyé. Réessayez plus tard ou contactez le support.</div>@endunless
+        @if(session('email_service_unavailable'))<div class="form-alert" role="status">La réinitialisation par e-mail est temporairement indisponible : le serveur d’envoi n’est pas configuré. Aucun lien n’a été envoyé. Réessayez plus tard ou contactez le support.</div>@endif
         @if(session('status'))<div class="success-alert" role="status">{{ session('status') }}</div>@endif
         @if($errors->any())<div class="form-alert" role="alert">{{ $errors->first() }}</div>@endif
         <form method="POST" action="{{ route('password.email') }}">@csrf
             <div class="field"><label for="email">Adresse e-mail</label><input id="email" type="email" name="email" value="{{ old('email') }}" autocomplete="email" required autofocus></div>
-            <button class="button" type="submit">Envoyer le lien <span aria-hidden="true">→</span></button>
+            <button class="button" type="submit" @disabled(!$emailTransportAvailable)>Envoyer le lien <span aria-hidden="true">→</span></button>
         </form>
         <p class="form-foot"><a href="{{ route('login') }}">Retour à la connexion</a></p>
     </div>

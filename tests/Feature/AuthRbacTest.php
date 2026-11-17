@@ -49,6 +49,40 @@ class AuthRbacTest extends TestCase
         $this->assertSame((int) $user->password_revision, (int) session('auth.password_revision'));
     }
 
+    public function test_regular_login_accepts_legacy_email_with_different_case_or_whitespace(): void
+    {
+        $user = $this->makeUser(['email' => 'Legacy.User@example.test']);
+
+        $this->post(route('login.store'), [
+            'email' => ' legacy.user@EXAMPLE.test ',
+            'password' => 'correct horse battery staple',
+        ])->assertRedirect(route('dashboard'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_login_page_explains_that_new_accounts_need_verified_email_delivery(): void
+    {
+        app()['env'] = 'production';
+        config([
+            'app.env' => 'production',
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => 'smtp.mail.example.net',
+            'mail.from.address' => 'no-reply@blackwolf.example.net',
+            'email.live_verified' => false,
+        ]);
+
+        try {
+            $this->get(route('login'))
+                ->assertOk()
+                ->assertSee('Les inscriptions et confirmations d’adresse sont suspendues');
+        } finally {
+            app()['env'] = 'testing';
+            config(['app.env' => 'testing']);
+        }
+    }
+
     public function test_registration_creates_an_investor_session_with_a_fresh_password_revision(): void
     {
         Notification::fake();

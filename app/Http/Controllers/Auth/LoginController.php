@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AdminTotpService;
+use App\Support\EmailDeliveryReadiness;
 use App\Support\PrimaryAdministrator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,12 +15,15 @@ use Illuminate\Support\Str;
 
 class LoginController extends Controller
 {
-    public function show(Request $request)
+    public function show(Request $request, EmailDeliveryReadiness $emailReadiness)
     {
         $portal = $request->route('portal');
         abort_if($portal !== null && !in_array($portal, ['investisseur', 'administrateur'], true), 404);
 
-        return view('auth.login', ['portal' => $portal]);
+        return view('auth.login', [
+            'portal' => $portal,
+            'registrationEmailReady' => $emailReadiness->canSend(),
+        ]);
     }
 
     public function login(Request $request, AdminTotpService $totp)
@@ -35,7 +39,9 @@ class LoginController extends Controller
             return back()->withErrors(['email' => 'Trop de tentatives.']);
         }
 
-        $user = User::where('email', $credentials['email'])->first();
+        // Match legacy addresses case-insensitively, just like registration's
+        // duplicate check, so historical mixed-case rows remain accessible.
+        $user = User::whereRaw('LOWER(TRIM(email)) = ?', [$credentials['email']])->first();
         if (!$user || !Hash::check($credentials['password'], $user->password) || $user->status !== 'ACTIVE') {
             RateLimiter::hit($key, 60);
             return back()->withErrors(['email' => 'Identifiants invalides.']);

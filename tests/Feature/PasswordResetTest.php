@@ -27,6 +27,41 @@ class PasswordResetTest extends TestCase
         Notification::assertNothingSent();
     }
 
+    public function test_password_reset_explains_global_smtp_unavailability_without_sending(): void
+    {
+        app()['env'] = 'production';
+        config([
+            'app.env' => 'production',
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => '127.0.0.1',
+            'mail.from.address' => '',
+            'email.live_verified' => false,
+        ]);
+        Notification::fake();
+
+        try {
+            $this->get(route('password.request'))
+                ->assertOk()
+                ->assertSee('Aucun lien n’a été envoyé')
+                ->assertSee('disabled', false);
+
+            $csrfToken = str_repeat('a', 40);
+            $this->withSession(['_token' => $csrfToken])
+                ->from(route('password.request'))
+                ->post(route('password.email'), [
+                    '_token' => $csrfToken,
+                    'email' => 'awa@example.test',
+                ])
+                ->assertRedirect(route('password.request'))
+                ->assertSessionHas('email_service_unavailable');
+
+            Notification::assertNothingSent();
+        } finally {
+            app()['env'] = 'testing';
+            config(['app.env' => 'testing']);
+        }
+    }
+
     public function test_reset_link_uses_the_branded_notification(): void
     {
         Notification::fake();

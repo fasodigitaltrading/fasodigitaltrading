@@ -4,7 +4,7 @@
 <section class="container form-layout">
     <div class="form-intro"><span class="eyebrow">FASO DIGITAL TRADING</span><h1>Créez votre espace personnel.</h1><p>Vous pourrez y retrouver les informations associées à votre compte et vos demandes.</p><div class="form-points"><div class="form-point"><span>✓</span> Aucun mot de passe principal MT5 demandé</div><div class="form-point"><span>✓</span> Accès limité à votre espace</div><div class="form-point"><span>✓</span> Connexions externes uniquement si configurées</div></div></div>
     <div class="form-card"><h2>Créer mon compte</h2><p>Les champs marqués sont nécessaires à la création de votre espace.</p>
-        @unless($registrationAvailable)<div class="form-alert" role="status">L’inscription est momentanément indisponible : la confirmation par e-mail doit d’abord être configurée et testée par l’équipe. Réessayez plus tard ou <a href="{{ route('home') }}#contact">contactez-nous</a>.</div>@endunless
+        @unless($registrationAvailable)<div class="form-alert" role="status">L’inscription est momentanément indisponible : la confirmation par e-mail doit d’abord être configurée et testée par l’équipe. Réessayez plus tard ou <a href="/#contact">contactez-nous</a>.</div>@endunless
         @if($errors->any())<div class="form-alert" role="alert">{{ $errors->first() }}</div>@endif
         <form method="POST" action="{{ route('register.store') }}">@csrf
             <input type="hidden" name="ref" value="{{ old('ref', $ref) }}">

@@ -41,7 +41,8 @@ class EmailDeliveryReadinessTest extends TestCase
 
         $this->get(route('register'))
             ->assertOk()
-            ->assertSee('L’inscription est momentanément indisponible');
+            ->assertSee('L’inscription est momentanément indisponible')
+            ->assertSee('href="/#contact"', false);
 
         $csrfToken = str_repeat('a', 40);
         $this->withSession(['_token' => $csrfToken])->from(route('register'))->post(route('register.store'), [
